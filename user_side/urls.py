@@ -20,8 +20,8 @@ from .views import MyTokenObtainPairView
 from . import views
 
 urlpatterns = [
-    path('api/token/', MyTokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('token/', MyTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('register/', views.register_user, name='register'),
     path('otp/', views.verify_otp, name='otp'),
     path('resent-otp/', views.resend_otp, name='otp'),
