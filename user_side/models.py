@@ -14,6 +14,7 @@ from io import BytesIO
 from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.core.exceptions import ValidationError
 import uuid
+from django.utils.timezone import now, timedelta
 
 def validate_image_size(image):
     """Validate that image file size is under 5MB"""
@@ -116,6 +117,17 @@ class User(AbstractUser):
         blank=True,
         help_text="Last time the user was active"
     )
+    otp_code = models.CharField(
+        max_length=5,
+        blank=True,
+        null=True,
+        help_text="Temporary OTP for email verification"
+    )
+    otp_created_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text="Timestamp of when the OTP was created"
+    )
 
     class Meta:
         db_table = 'user'
@@ -125,7 +137,7 @@ class User(AbstractUser):
             models.Index(fields=['rating'], name='user_rating_idx'),
             models.Index(fields=['last_active'], name='user_last_active_idx'),
         ]
-
+        
     def save(self, *args, **kwargs):
         """Resize and optimize profile and banner images before saving."""
         if self.profile_image and hasattr(self.profile_image, 'file'):
@@ -143,14 +155,7 @@ class User(AbstractUser):
         super().save(*args, **kwargs)
 
     def _resize_image(self, image_field, size, crop=False):
-        """
-        Helper to resize and optimize images.
-        
-        Args:
-            image_field: The image field to resize
-            size: Tuple of (width, height)
-            crop: If True, crop to exact size; if False, maintain aspect ratio
-        """
+        """Helper to resize and optimize images"""
         img = Image.open(image_field)
         
         # Convert to RGB if necessary
@@ -187,7 +192,13 @@ class User(AbstractUser):
             output.getbuffer().nbytes,
             None
         )
-
+        
+    def is_otp_valid(self):
+        """Check if the OTP is still valid on time."""
+        if self.otp_created_at:
+            return now() < self.otp_created_at + timedelta(minutes=5)
+        return False
+    
     @property
     def follower_count(self):
         """Get the number of followers"""
