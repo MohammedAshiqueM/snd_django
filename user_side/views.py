@@ -32,9 +32,49 @@ from .serializers import (
 
 User = get_user_model()
 
-class MyTokenObtainPairView(TokenObtainPairView):
-    serializer_class = MyTokenObtainPairSerializer
+from django.http import JsonResponse
 
+class MyTokenObtainPairView(TokenObtainPairView):
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        data = response.data
+
+        access_token = data.get("access")
+        refresh_token = data.get("refresh")
+
+        http_response = JsonResponse({
+            "message": "Login successful",
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            })
+
+        if access_token:
+            http_response.set_cookie(
+                key='access_token',
+                value=access_token,
+                httponly=True,
+                secure=True, 
+                samesite='Lax',
+                max_age=3600, 
+            )
+        if refresh_token:
+            http_response.set_cookie(
+                key='refresh_token',
+                value=refresh_token,
+                httponly=True,
+                secure=True,
+                samesite='Lax',
+                max_age=604800,
+            )
+
+        return http_response
+
+
+def logout_view(request):
+    response = JsonResponse({"message": "Logout successful"})
+    response.delete_cookie('access_token')
+    response.delete_cookie('refresh_token')
+    return response
 
 def get_tokens_for_user(user):
     refresh = RefreshToken.for_user(user)
