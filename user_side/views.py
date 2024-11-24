@@ -30,6 +30,7 @@ from .serializers import (
     SkillSharingRequest,TimeTransactionSerializer,SkillSharingRequestSerializer
     )
 
+
 User = get_user_model()
 
 from django.http import JsonResponse
@@ -141,7 +142,39 @@ def verify_otp(request):
             user.otp_code = None
             user.otp_created_at = None
             user.save()
-            return Response({'detail': 'User verified and activated'}, status=status.HTTP_200_OK)
+            
+            token_serializer = MyTokenObtainPairSerializer()
+            tokens = token_serializer.get_token(user)
+            
+            access_token = str(tokens.access_token)
+            refresh_token = str(tokens)
+                
+            http_response = JsonResponse({
+            "message": "User verified and Login successfully",
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            })
+
+            if access_token:
+                http_response.set_cookie(
+                    key='access_token',
+                    value=access_token,
+                    httponly=True,
+                    secure=True, 
+                    samesite='Lax',
+                    max_age=3600, 
+                )
+            if refresh_token:
+                http_response.set_cookie(
+                    key='refresh_token',
+                    value=refresh_token,
+                    httponly=True,
+                    secure=True,
+                    samesite='Lax',
+                    max_age=604800,
+                )
+
+            return http_response
 
         return Response({'detail': 'Invalid OTP'}, status=status.HTTP_400_BAD_REQUEST)
 
