@@ -25,6 +25,8 @@ urlpatterns = [
     path('register/', views.register_user, name='register'),
     path('otp/', views.verify_otp, name='otp'),
     path('resent-otp/', views.resend_otp, name='otp'),
+    path('auth/google-login/', views.google_login, name='google-login'),
+
     
 ]
 

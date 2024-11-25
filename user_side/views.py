@@ -15,6 +15,7 @@ from django.core.mail import send_mail
 from random import randint
 from django.utils.timezone import now, timedelta
 # from dotenv import load_dotenv
+from social_django.utils import psa
 from decouple import config
 import os
 from .models import (
@@ -29,11 +30,17 @@ from .serializers import (
     RequestTagSerializer,BlogCommentSerializer,QuestionTagSerializer,QuestionVoteSerializer,
     SkillSharingRequest,TimeTransactionSerializer,SkillSharingRequestSerializer
     )
-
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from google.auth.transport import requests
+from google.oauth2 import id_token
+from django.contrib.auth.models import User
+from rest_framework_simplejwt.tokens import RefreshToken
 
 User = get_user_model()
 
 from django.http import JsonResponse
+
 
 class MyTokenObtainPairView(TokenObtainPairView):
     def post(self, request, *args, **kwargs):
@@ -212,3 +219,49 @@ def resend_otp(request):
     )
 
     return Response({'detail': 'OTP resent successfully.'}, status=status.HTTP_200_OK)
+
+from google.oauth2.id_token import verify_oauth2_token
+from google.auth.transport.requests import Request
+
+# Make sure to use the correct Client ID
+GOOGLE_CLIENT_ID = config('GOOGLE_CLIENT_ID', cast=str).strip()
+ # Replace with your actual Google Client ID
+
+@api_view(['POST'])
+def google_login(request):
+    token = request.data.get('token')
+    if not token:
+        return Response({'error': 'No token provided'}, status=400)
+
+    try:
+        # Decode the token and get the ID info
+        idinfo = id_token.verify_oauth2_token(token, requests.Request(), GOOGLE_CLIENT_ID)
+        
+        # Log the token and audience for debugging
+        print(f"Received token: {token}")
+        print(f"Token audience (aud): {idinfo.get('aud')}")
+        
+        # Check if the audience matches the expected Client ID
+        if idinfo['aud'] != GOOGLE_CLIENT_ID:
+            print(GOOGLE_CLIENT_ID)
+            return Response({'error': 'Invalid audience'}, status=400)
+
+        # If the audience is valid, you can create or authenticate the user
+        email = idinfo.get('email')
+        name = idinfo.get('name')
+
+        # Create or get the user from the database
+        user, created = User.objects.get_or_create(
+            username=email, defaults={'email': email, 'first_name': name}
+        )
+
+        # Generate JWT tokens for authentication
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            'access': str(refresh.access_token),
+            'refresh': str(refresh)
+        })
+
+    except ValueError as e:
+        print(f"Error while verifying token: {str(e)}")
+        return Response({'error': 'Invalid token or audience mismatch'}, status=400)
