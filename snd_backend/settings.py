@@ -152,6 +152,12 @@ CORS_ALLOWED_ORIGINS = [
 
 ]
 
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173", 
+    "http://127.0.0.1:5173",
+    
+]
+
 
 SECURE_CROSS_ORIGIN_OPENER_POLICY = 'unsafe-none'
 SECURE_CROSS_ORIGIN_RESOURCE_POLICY = 'same-origin'

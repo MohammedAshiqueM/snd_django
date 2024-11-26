@@ -38,9 +38,14 @@ from django.contrib.auth.models import User
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 from rest_framework.exceptions import AuthenticationFailed
-User = get_user_model()
-
 from django.http import JsonResponse
+from django.urls import reverse
+import json
+from django.contrib.auth.hashers import make_password
+
+
+
+User = get_user_model()
 
 
 
@@ -315,3 +320,61 @@ def google_login(request):
     except ValueError as e:
         print(f"Error while verifying token: {str(e)}")
         return Response({'error': 'Invalid token or audience mismatch'}, status=400)
+
+from django.views.decorators.csrf import csrf_exempt
+
+@csrf_exempt
+def forgot_password(request):
+    if request.method == "POST":
+        data = json.loads(request.body)
+        email = data.get("email")
+        try:
+            user = User.objects.get(email=email)
+            user.generate_reset_token()
+
+            frontend_url = "http://localhost:5173"
+            reset_url = f"{frontend_url}/reset-password/?token={user.reset_token}"
+
+            # Send email
+            send_mail(
+                subject="Password Reset Request",
+                message=f"Click the link to reset your password: {reset_url}",
+                from_email=config('EMAIL_HOST_USER'),
+                recipient_list=[email],
+            )
+            return JsonResponse({"message": "Reset link sent to your email."})
+        except User.DoesNotExist:
+            return JsonResponse({"message": "Email not found."}, status=404)
+
+    return JsonResponse({"message": "Invalid request method."}, status=400)
+
+
+@csrf_exempt
+def reset_password(request):
+    if request.method == "POST":
+        data = json.loads(request.body)
+        print(data)
+        token = data.get("token")
+        password = data.get("password")
+
+        try:
+            user = User.objects.get(reset_token=token)
+            print(user.email)
+            if user.is_reset_token_valid(token):
+                print("done")
+                print(f"Password before hashing: {user.password}")
+                user.set_password(password)
+                # print(f"Password after hashing: {user.password}")
+                user.reset_token = None
+                user.reset_token_expiration = None
+                user.save()
+                print(f"In db: {password}")
+                return JsonResponse({"message": "Password reset successful."})
+            else:
+                return JsonResponse({"message": "Invalid or expired token."}, status=400)
+        except User.DoesNotExist:
+            return JsonResponse({"message": "Invalid token."}, status=400)
+
+    return JsonResponse({"message": "Invalid request method."}, status=400)
+
+

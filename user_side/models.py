@@ -128,7 +128,17 @@ class User(AbstractUser):
         null=True,
         help_text="Timestamp of when the OTP was created"
     )
-
+    reset_token = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Token for password reset"
+    )
+    reset_token_expiration = models.DateTimeField(
+        blank=True,
+        null=True,
+        help_text="Expiration time for the reset token"
+    )
     class Meta:
         db_table = 'user'
         indexes = [
@@ -199,6 +209,20 @@ class User(AbstractUser):
             return now() < self.otp_created_at + timedelta(minutes=5)
         return False
     
+    def generate_reset_token(self):
+        """Generate a unique reset token and set expiration."""
+        self.reset_token = str(uuid.uuid4())  # Generate a unique token
+        self.reset_token_expiration = now() + timedelta(hours=1)  # Set 1-hour validity
+        self.save()
+
+    def is_reset_token_valid(self, token):
+        """Check if the provided reset token is valid."""
+        return (
+            self.reset_token == token and
+            self.reset_token_expiration and
+            now() < self.reset_token_expiration
+        )
+        
     @property
     def follower_count(self):
         """Get the number of followers"""

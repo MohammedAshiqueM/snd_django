@@ -26,6 +26,10 @@ urlpatterns = [
     path('otp/', views.verify_otp, name='otp'),
     path('resent-otp/', views.resend_otp, name='otp'),
     path('auth/google-login/', views.google_login, name='google-login'),
+    path('forget-password/', views.forgot_password, name='forget-password'),
+    path('reset-password/', views.reset_password, name='reset-password'),
+    
+    
 
     
 ]
