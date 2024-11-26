@@ -37,47 +37,82 @@ from google.oauth2 import id_token
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
-
+from rest_framework.exceptions import AuthenticationFailed
 User = get_user_model()
 
 from django.http import JsonResponse
 
 
+
 class MyTokenObtainPairView(TokenObtainPairView):
     def post(self, request, *args, **kwargs):
-        response = super().post(request, *args, **kwargs)
-        data = response.data
+        try:
+            email = request.data.get('username', '').strip()
+            password = request.data.get('password', '')
 
-        access_token = data.get("access")
-        refresh_token = data.get("refresh")
+            try:
+                user = User.objects.get(username=email)
+            except User.DoesNotExist:
+                raise AuthenticationFailed("Invalid credentials")
 
-        http_response = JsonResponse({
-            "message": "Login successful",
-            "access_token": access_token,
-            "refresh_token": refresh_token,
+            if not user.check_password(password):
+                raise AuthenticationFailed("Invalid credentials")
+
+            if not user.is_active:
+                user.otp_code = str(randint(10000, 99999))
+                user.otp_created_at = now()
+                user.save()
+                send_mail(
+                    subject="Resend OTP Request",
+                    message=f"Your OTP code is {user.otp_code}. It is valid for 5 minutes.",
+                    from_email=config('EMAIL_HOST_USER'),
+                    recipient_list=[user.email],
+                    fail_silently=False,
+                )
+
+                return JsonResponse({
+                    "detail": "User is inactive. OTP has been resent.",
+                }, status=400)
+
+            response = super().post(request, *args, **kwargs)
+            data = response.data
+
+            access_token = data.get("access")
+            refresh_token = data.get("refresh")
+
+            http_response = JsonResponse({
+                "message": "Login successful",
+                "access_token": access_token,
+                "refresh_token": refresh_token,
             })
 
-        if access_token:
-            http_response.set_cookie(
-                key='access_token',
-                value=access_token,
-                httponly=True,
-                secure=True, 
-                samesite='Lax',
-                max_age=3600, 
-            )
-        if refresh_token:
-            http_response.set_cookie(
-                key='refresh_token',
-                value=refresh_token,
-                httponly=True,
-                secure=True,
-                samesite='Lax',
-                max_age=604800,
-            )
+            if access_token:
+                http_response.set_cookie(
+                    key='access_token',
+                    value=access_token,
+                    httponly=True,
+                    secure=True,
+                    samesite='Lax',
+                    max_age=3600,
+                )
 
-        return http_response
+            if refresh_token:
+                http_response.set_cookie(
+                    key='refresh_token',
+                    value=refresh_token,
+                    httponly=True,
+                    secure=True,
+                    samesite='Lax',
+                    max_age=604800,
+                )
 
+            return http_response
+
+        except AuthenticationFailed as e:
+            return JsonResponse({"detail": str(e)}, status=400)
+
+        except Exception as e:
+            return JsonResponse({"detail": str(e)}, status=500)    
 class TokenRefreshView(TokenRefreshView):
     def post(self, request, *args, **kwargs):
         refresh_token = request.data.get('refresh')
