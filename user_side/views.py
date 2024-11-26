@@ -36,6 +36,7 @@ from google.auth.transport import requests
 from google.oauth2 import id_token
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenRefreshView
 
 User = get_user_model()
 
@@ -77,7 +78,21 @@ class MyTokenObtainPairView(TokenObtainPairView):
 
         return http_response
 
-
+class TokenRefreshView(TokenRefreshView):
+    def post(self, request, *args, **kwargs):
+        refresh_token = request.data.get('refresh')
+        
+        if not refresh_token:
+            return Response({"error": "Refresh token is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            refresh = RefreshToken(refresh_token)
+            new_access_token = str(refresh.access_token)
+            return Response({"access_token": new_access_token})
+        
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
 def logout_view(request):
     response = JsonResponse({"message": "Logout successful"})
     response.delete_cookie('access_token')
