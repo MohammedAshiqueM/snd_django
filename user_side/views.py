@@ -34,7 +34,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from google.auth.transport import requests
 from google.oauth2 import id_token
-from django.contrib.auth.models import User
+# from django.contrib.auth.models import User
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 from rest_framework.exceptions import AuthenticationFailed
@@ -50,6 +50,7 @@ User = get_user_model()
 
 
 class MyTokenObtainPairView(TokenObtainPairView):
+    """Login the user via jwt"""
     def post(self, request, *args, **kwargs):
         try:
             email = request.data.get('username', '').strip()
@@ -119,6 +120,7 @@ class MyTokenObtainPairView(TokenObtainPairView):
         except Exception as e:
             return JsonResponse({"detail": str(e)}, status=500)    
 class TokenRefreshView(TokenRefreshView):
+    """Refresh the token and return new access token"""
     def post(self, request, *args, **kwargs):
         refresh_token = request.data.get('refresh')
         
@@ -248,13 +250,11 @@ def resend_otp(request):
     """Handle OTP resend requests."""
     email = request.data.get('email', '').strip().lower()
 
-    # Check if the user exists
     try:
         user = User.objects.get(email=email)
     except User.DoesNotExist:
         return Response({'detail': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-    # Check if user is already verified
     if user.is_active:
         return Response({'detail': 'User is already verified.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -278,9 +278,7 @@ def resend_otp(request):
 from google.oauth2.id_token import verify_oauth2_token
 from google.auth.transport.requests import Request
 
-# Make sure to use the correct Client ID
 GOOGLE_CLIENT_ID = config('GOOGLE_CLIENT_ID', cast=str).strip()
- # Replace with your actual Google Client ID
 
 @api_view(['POST'])
 def google_login(request):
@@ -289,28 +287,22 @@ def google_login(request):
         return Response({'error': 'No token provided'}, status=400)
 
     try:
-        # Decode the token and get the ID info
         idinfo = id_token.verify_oauth2_token(token, requests.Request(), GOOGLE_CLIENT_ID)
         
-        # Log the token and audience for debugging
         print(f"Received token: {token}")
         print(f"Token audience (aud): {idinfo.get('aud')}")
         
-        # Check if the audience matches the expected Client ID
         if idinfo['aud'] != GOOGLE_CLIENT_ID:
             print(GOOGLE_CLIENT_ID)
             return Response({'error': 'Invalid audience'}, status=400)
 
-        # If the audience is valid, you can create or authenticate the user
         email = idinfo.get('email')
         name = idinfo.get('name')
 
-        # Create or get the user from the database
         user, created = User.objects.get_or_create(
             username=email, defaults={'email': email, 'first_name': name}
         )
 
-        # Generate JWT tokens for authentication
         refresh = RefreshToken.for_user(user)
         return Response({
             'access': str(refresh.access_token),
@@ -321,7 +313,6 @@ def google_login(request):
         print(f"Error while verifying token: {str(e)}")
         return Response({'error': 'Invalid token or audience mismatch'}, status=400)
 
-from django.views.decorators.csrf import csrf_exempt
 
 @csrf_exempt
 def forgot_password(request):
@@ -335,7 +326,6 @@ def forgot_password(request):
             frontend_url = "http://localhost:5173"
             reset_url = f"{frontend_url}/reset-password/?token={user.reset_token}"
 
-            # Send email
             send_mail(
                 subject="Password Reset Request",
                 message=f"Click the link to reset your password: {reset_url}",
