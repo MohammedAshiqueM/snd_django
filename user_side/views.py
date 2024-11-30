@@ -42,7 +42,9 @@ from django.http import JsonResponse
 from django.urls import reverse
 import json
 from django.contrib.auth.hashers import make_password
-
+from .utils import api_response
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework.permissions import AllowAny
 
 
 User = get_user_model()
@@ -86,18 +88,19 @@ class MyTokenObtainPairView(TokenObtainPairView):
             access_token = data.get("access")
             refresh_token = data.get("refresh")
 
-            http_response = JsonResponse({
-                "message": "Login successful",
-                "access_token": access_token,
-                "refresh_token": refresh_token,
-            })
+            http_response = api_response(
+                status.HTTP_200_OK,
+                "Login successful",
+                {"access_token": access_token,
+                "refresh_token": refresh_token,}
+            )
 
             if access_token:
                 http_response.set_cookie(
                     key='access_token',
                     value=access_token,
                     httponly=True,
-                    secure=True,
+                    secure=False,
                     samesite='Lax',
                     max_age=3600,
                 )
@@ -107,7 +110,7 @@ class MyTokenObtainPairView(TokenObtainPairView):
                     key='refresh_token',
                     value=refresh_token,
                     httponly=True,
-                    secure=True,
+                    secure=False,
                     samesite='Lax',
                     max_age=604800,
                 )
@@ -119,28 +122,35 @@ class MyTokenObtainPairView(TokenObtainPairView):
 
         except Exception as e:
             return JsonResponse({"detail": str(e)}, status=500)    
-class TokenRefreshView(TokenRefreshView):
-    """Refresh the token and return new access token"""
+        
+class CustomTokenRefreshView(TokenRefreshView):
     def post(self, request, *args, **kwargs):
-        refresh_token = request.data.get('refresh')
-        
+        # Extract refresh token from HttpOnly cookie
+        refresh_token = request.COOKIES.get('refresh_token')
         if not refresh_token:
-            return Response({"error": "Refresh token is required"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            refresh = RefreshToken(refresh_token)
-            new_access_token = str(refresh.access_token)
-            return Response({"access_token": new_access_token})
-        
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        
-def logout_view(request):
-    response = JsonResponse({"message": "Logout successful"})
-    response.delete_cookie('access_token')
-    response.delete_cookie('refresh_token')
-    return response
+            return Response({"error": "Refresh token not provided"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Add the refresh token to the request data
+        request.data['refresh'] = refresh_token
+
+        # Let the default TokenRefreshView handle the rest
+        try:
+            return super().post(request, *args, **kwargs)
+        except (TokenError, InvalidToken) as e:
+            return Response({"error": "Invalid refresh token"}, status=status.HTTP_401_UNAUTHORIZED)
+
+@api_view(['POST'])      
+def logout_view(request):
+        response = Response({'detail': 'Logout successful'}, status=status.HTTP_200_OK)
+        
+        response.delete_cookie('access_token', path='/')
+        response.delete_cookie('refresh_token', path='/')
+        
+        response.set_cookie('access_token', '', expires=0, httponly=True, samesite='None', secure=True) 
+        response.set_cookie('refresh_token', '', expires=0, httponly=True, samesite='None', secure=True)
+
+        return response
+    
 def get_tokens_for_user(user):
     refresh = RefreshToken.for_user(user)
     return {
@@ -224,7 +234,7 @@ def verify_otp(request):
                     key='access_token',
                     value=access_token,
                     httponly=True,
-                    secure=True, 
+                    secure=False, 
                     samesite='Lax',
                     max_age=3600, 
                 )
@@ -233,7 +243,7 @@ def verify_otp(request):
                     key='refresh_token',
                     value=refresh_token,
                     httponly=True,
-                    secure=True,
+                    secure=False,
                     samesite='Lax',
                     max_age=604800,
                 )
@@ -281,19 +291,21 @@ from google.auth.transport.requests import Request
 GOOGLE_CLIENT_ID = config('GOOGLE_CLIENT_ID', cast=str).strip()
 
 @api_view(['POST'])
+@permission_classes([AllowAny])
 def google_login(request):
-    token = request.data.get('token')
+    print("inside....")
+    print("Full request headers:", request.headers)
+    print("Full request method:", request.method)
+    print("Full request path:", request.path)
+    print("All cookies:", request.COOKIES)
+    token = request.COOKIES.get('token')
     if not token:
         return Response({'error': 'No token provided'}, status=400)
 
     try:
+        # Verify Google ID token
         idinfo = id_token.verify_oauth2_token(token, requests.Request(), GOOGLE_CLIENT_ID)
-        
-        print(f"Received token: {token}")
-        print(f"Token audience (aud): {idinfo.get('aud')}")
-        
         if idinfo['aud'] != GOOGLE_CLIENT_ID:
-            print(GOOGLE_CLIENT_ID)
             return Response({'error': 'Invalid audience'}, status=400)
 
         email = idinfo.get('email')
@@ -304,13 +316,26 @@ def google_login(request):
         )
 
         refresh = RefreshToken.for_user(user)
-        return Response({
-            'access': str(refresh.access_token),
-            'refresh': str(refresh)
-        })
+        access_token = str(refresh.access_token)
+
+        response = JsonResponse({'message': 'Login successful'})
+        response.set_cookie(
+            key='access_token',
+            value=access_token,
+            httponly=True,
+            secure=True,  
+            samesite='Lax', 
+        )
+        response.set_cookie(
+            key='refresh_token',
+            value=str(refresh),
+            httponly=True,
+            secure=True,
+            samesite='Lax',
+        )
+        return response
 
     except ValueError as e:
-        print(f"Error while verifying token: {str(e)}")
         return Response({'error': 'Invalid token or audience mismatch'}, status=400)
 
 
@@ -323,7 +348,8 @@ def forgot_password(request):
             user = User.objects.get(email=email)
             user.generate_reset_token()
 
-            frontend_url = "http://localhost:5173"
+            # frontend_url = "http://localhost:5173"
+            frontend_url = "http://127.0.0.1:5173/" 
             reset_url = f"{frontend_url}/reset-password/?token={user.reset_token}"
 
             send_mail(
@@ -368,3 +394,24 @@ def reset_password(request):
     return JsonResponse({"message": "Invalid request method."}, status=400)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def AuthCheck(request):
+    try:
+        # Remove JSON parsing for GET request
+        print("Received Cookies:", request.COOKIES)
+        print("Received Headers:", request.headers)
+        print("Authenticated User:", request.user)
+        
+        return api_response(
+            status.HTTP_200_OK,
+            "Authenticated User",
+            {"isAuthenticated": True}
+        )
+    except Exception as e:
+        print(f"Error in AuthCheck: {e}")
+        return api_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Authentication check failed",
+            {"error": str(e)}
+        )

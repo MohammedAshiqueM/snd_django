@@ -16,21 +16,21 @@ Including another URLconf
 """
 from django.urls import path
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from .views import MyTokenObtainPairView
+from .views import MyTokenObtainPairView,CustomTokenRefreshView
 from . import views
 
 urlpatterns = [
     path('token/', MyTokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('token/refresh/', CustomTokenRefreshView.as_view(), name='token_refresh'),
     path('register/', views.register_user, name='register'),
     path('otp/', views.verify_otp, name='otp'),
     path('resent-otp/', views.resend_otp, name='otp'),
     path('auth/google-login/', views.google_login, name='google-login'),
     path('forget-password/', views.forgot_password, name='forget-password'),
     path('reset-password/', views.reset_password, name='reset-password'),
+    path('auth/check/', views.AuthCheck, name='auth-check'),
+    path('logout/', views.logout_view, name='logout'),
     
-    
-
     
 ]
 
