@@ -152,6 +152,26 @@ CORS_ALLOWED_ORIGINS = [
 
 ]
 
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173", 
     "http://127.0.0.1:5173",
@@ -217,4 +237,28 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
+    'AUTH_COOKIE': 'access_token',  # Optional, if you also store the access token
+    'AUTH_COOKIE_REFRESH': 'refresh_token',
 }
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'user_side.utils.CustomJWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.AllowAny',
+        # 'rest_framework.permissions.IsAuthenticated',
+    ),
+}
+
+SESSION_COOKIE_SAMESITE = 'None'  # Ensure this is set to 'None' for cross-origin cookies
+SESSION_COOKIE_SECURE = False  # Set to True in production (use HTTPS)
+
+SESSION_COOKIE_SAMESITE = 'lax'  # change this to none on production (now both are in http://127.0.0.1:)
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SAMESITE = 'None'  # or 'lax' 
+CSRF_COOKIE_HTTPONLY = True 
+CSRF_COOKIE_SECURE = False
+CSRF_COOKIE_HTTP_ONLY = True
+SESSION_COOKIE_DOMAIN = None  # localhost not working (now both are in http://127.0.0.1: that's why it is working)
