@@ -178,8 +178,6 @@ def register_user(request):
     try:
         otp = f"{randint(10000, 99999)}" 
         user = User.objects.create_user(
-            first_name=data.get('firstname', '').strip(),
-            last_name=data.get('lastname', '').strip(),
             email=email,
             username=email,
             password=data.get('password'),
@@ -187,6 +185,8 @@ def register_user(request):
             otp_code=otp,
             otp_created_at=now(),
         )
+        user.first_name = data.get('firstName', '').strip()
+        user.last_name = data.get('lastName', '').strip()
         user.save()
         send_mail(
             subject="Your OTP Verification Code",
