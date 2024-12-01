@@ -1,4 +1,3 @@
 .env
 __pycache__/
 *.pyc
-user_side/__pycache__/
