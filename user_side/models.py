@@ -139,6 +139,11 @@ class User(AbstractUser):
         null=True,
         help_text="Expiration time for the reset token"
     )
+    is_blocked = models.BooleanField(
+        default=False,
+        help_text="Indicates if the user is blocked by an admin"
+    )
+
     class Meta:
         db_table = 'user'
         indexes = [

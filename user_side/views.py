@@ -66,6 +66,9 @@ class MyTokenObtainPairView(TokenObtainPairView):
             if not user.check_password(password):
                 raise AuthenticationFailed("Invalid credentials")
 
+            if user.is_blocked:
+                raise AuthenticationFailed("User is blocked")
+            
             if not user.is_active:
                 user.otp_code = str(randint(10000, 99999))
                 user.otp_created_at = now()
