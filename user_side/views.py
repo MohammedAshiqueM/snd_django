@@ -78,9 +78,10 @@ class MyTokenObtainPairView(TokenObtainPairView):
                     fail_silently=False,
                 )
 
-                return JsonResponse({
-                    "detail": "User is inactive. OTP has been resent.",
-                }, status=400)
+                return api_response(
+                    status.HTTP_400_BAD_REQUEST,
+                    "User is inactive. OTP has been resent.",
+                )
 
             response = super().post(request, *args, **kwargs)
             data = response.data
@@ -125,15 +126,13 @@ class MyTokenObtainPairView(TokenObtainPairView):
         
 class CustomTokenRefreshView(TokenRefreshView):
     def post(self, request, *args, **kwargs):
-        # Extract refresh token from HttpOnly cookie
+        
         refresh_token = request.COOKIES.get('refresh_token')
         if not refresh_token:
             return Response({"error": "Refresh token not provided"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Add the refresh token to the request data
         request.data['refresh'] = refresh_token
 
-        # Let the default TokenRefreshView handle the rest
         try:
             return super().post(request, *args, **kwargs)
         except (TokenError, InvalidToken) as e:
@@ -171,7 +170,7 @@ def register_user(request):
     data = request.data
     email = data.get('email', '').lower().strip()
     if User.objects.filter(email=email).exists():
-        return Response({'detail': 'Email is already taken'}, status=status.HTTP_409_CONFLICT)
+        return api_response(status.HTTP_409_CONFLICT,'Email is already taken',)
 
     try:
         otp = f"{randint(10000, 99999)}" 
@@ -193,10 +192,10 @@ def register_user(request):
             recipient_list=[email],
         )
 
-        return Response({'detail': 'User registered. OTP sent to email.'}, status=status.HTTP_201_CREATED)
+        return api_response(status.HTTP_201_CREATED,'User registered. OTP sent to email.')
 
     except Exception as e:
-        return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return api_response(status.HTTP_400_BAD_REQUEST,str(e),)
 
 
 @api_view(['POST'])
@@ -303,7 +302,7 @@ def google_login(request):
         return Response({'error': 'No token provided'}, status=400)
 
     try:
-        # Verify Google ID token
+        
         idinfo = id_token.verify_oauth2_token(token, requests.Request(), GOOGLE_CLIENT_ID)
         if idinfo['aud'] != GOOGLE_CLIENT_ID:
             return Response({'error': 'Invalid audience'}, status=400)
@@ -350,7 +349,7 @@ def forgot_password(request):
 
             # frontend_url = "http://localhost:5173"
             frontend_url = "http://127.0.0.1:5173/" 
-            reset_url = f"{frontend_url}/reset-password/?token={user.reset_token}"
+            reset_url = f"{frontend_url}reset-password/?token={user.reset_token}"
 
             send_mail(
                 subject="Password Reset Request",
@@ -398,7 +397,6 @@ def reset_password(request):
 @permission_classes([IsAuthenticated])
 def AuthCheck(request):
     try:
-        # Remove JSON parsing for GET request
         print("Received Cookies:", request.COOKIES)
         print("Received Headers:", request.headers)
         print("Authenticated User:", request.user)
