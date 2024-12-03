@@ -30,3 +30,12 @@ class CustomJWTAuthentication(JWTAuthentication):
 
         validated_token = self.get_validated_token(raw_token)
         return self.get_user(validated_token), validated_token
+
+import os
+from django.utils.timezone import now
+
+def user_profile_image_path(instance, filename):
+    return os.path.join('profile_images', str(instance.id), filename)
+
+def user_banner_image_path(instance, filename):
+    return os.path.join('banner_images', str(instance.id), filename)

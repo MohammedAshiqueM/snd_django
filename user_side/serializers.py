@@ -18,7 +18,7 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
 class TagSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tag
-        fields = ['id', 'name', 'created_at']
+        fields = ['id', 'name', 'about', 'created_at']
 
 class UserSkillSerializer(serializers.ModelSerializer):
     tag = TagSerializer(read_only=True)
@@ -28,9 +28,11 @@ class UserSkillSerializer(serializers.ModelSerializer):
         fields = ['tag']
 
 class UserSerializer(serializers.ModelSerializer):
-    skills = serializers.SerializerMethodField()
-    followers_count = serializers.IntegerField(source='follower_count', read_only=True)
-    following_count = serializers.IntegerField(source='following_count', read_only=True)
+    skills = serializers.SlugRelatedField(
+        many=True, queryset=Tag.objects.all(), slug_field='name'
+    )
+    followers = serializers.IntegerField(source='follower_count', read_only=True)
+    following = serializers.IntegerField(source='following_count', read_only=True)
     
     class Meta:
         model = User
@@ -38,13 +40,16 @@ class UserSerializer(serializers.ModelSerializer):
             'id', 'username', 'email', 'first_name', 'last_name', 
             'profile_image', 'banner_image', 'linkedin_url', 
             'github_url', 'about', 'rating', 'time_balance', 
-            'skills', 'followers_count', 'following_count', 
+            'skills', 'followers', 'following', 
             'last_active'
         ]
         extra_kwargs = {
             'password': {'write_only': True},
         }
     
+    # def get_skills(self, obj):
+    #     # Return the names of the skills instead of IDs
+    #     return [tag.name for tag in obj.skills.all()]
     def get_skills(self, obj):
         return UserSkillSerializer(obj.skills.through.objects.filter(user=obj), many=True).data
     
@@ -52,7 +57,22 @@ class UserSerializer(serializers.ModelSerializer):
         # Hash the password before saving
         validated_data['password'] = make_password(validated_data.get('password'))
         return super().create(validated_data)
+ 
+    def update(self, instance, validated_data):
+        print(f"Validated data received for update: {validated_data}")  # Debug here
+        skills = validated_data.pop("skills", [])
+        print(f"Skills extracted for update: {skills}")  # Debug here
 
+        # Update skills
+        instance.skills.set(skills)  # Use `.set()` to update ManyToManyField.
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        return instance
+
+
+
+    
 class FollowerSerializer(serializers.ModelSerializer):
     follower = UserSerializer(read_only=True)
     following = UserSerializer(read_only=True)

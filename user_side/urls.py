@@ -30,6 +30,9 @@ urlpatterns = [
     path('reset-password/', views.reset_password, name='reset-password'),
     path('auth/check/', views.AuthCheck, name='auth-check'),
     path('logout/', views.logout_view, name='logout'),
+    path('profile/', views.get_user_profile, name='profile'),
+    path('profile/update/', views.update_user_profile, name='profile-update'),
+    path('tags/', views.get_tag_suggestions, name='tag-suggestions'),
     
     
 ]

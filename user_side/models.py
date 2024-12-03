@@ -249,7 +249,10 @@ class Follower(models.Model):
 class Tag(models.Model):
     name = models.CharField(max_length=50, unique=True)
     created_at = models.DateTimeField(default=timezone.now)
-
+    about = models.TextField(
+        blank=True,
+        help_text="Discription about the tags"
+    )
     class Meta:
         db_table = 'tags'
 

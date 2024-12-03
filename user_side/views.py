@@ -45,6 +45,8 @@ from django.contrib.auth.hashers import make_password
 from .utils import api_response
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework.permissions import AllowAny
+from google.oauth2.id_token import verify_oauth2_token
+from google.auth.transport.requests import Request
 
 
 User = get_user_model()
@@ -141,18 +143,26 @@ class CustomTokenRefreshView(TokenRefreshView):
         except (TokenError, InvalidToken) as e:
             return Response({"error": "Invalid refresh token"}, status=status.HTTP_401_UNAUTHORIZED)
 
-@api_view(['POST'])      
+@api_view(['POST'])
 def logout_view(request):
-        response = Response({'detail': 'Logout successful'}, status=status.HTTP_200_OK)
-        
-        response.delete_cookie('access_token', path='/')
-        response.delete_cookie('refresh_token', path='/')
-        
-        response.set_cookie('access_token', '', expires=0, httponly=True, samesite='None', secure=True) 
-        response.set_cookie('refresh_token', '', expires=0, httponly=True, samesite='None', secure=True)
-
-        return response
+    response = Response({'detail': 'Logout successful'}, status=status.HTTP_200_OK)
     
+    cookie_names = [
+        'access_token', 
+        'refresh_token', 
+        '_ga', 
+        '_gid', 
+        'csrftoken', 
+        'sessionid',
+        
+    ]
+    
+    # Delete specific cookies
+    for cookie_name in cookie_names:
+        response.delete_cookie(cookie_name, path='/')
+    
+    return response
+
 def get_tokens_for_user(user):
     refresh = RefreshToken.for_user(user)
     return {
@@ -287,8 +297,6 @@ def resend_otp(request):
 
     return Response({'detail': 'OTP resent successfully.'}, status=status.HTTP_200_OK)
 
-from google.oauth2.id_token import verify_oauth2_token
-from google.auth.transport.requests import Request
 
 GOOGLE_CLIENT_ID = config('GOOGLE_CLIENT_ID', cast=str).strip()
 
@@ -416,3 +424,47 @@ def AuthCheck(request):
             "Authentication check failed",
             {"error": str(e)}
         )
+        
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_user_profile(request):
+    """
+    Retrieve the current user's profile details
+    """
+    serializer = UserSerializer(request.user)
+    return Response(serializer.data)
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_user_profile(request):
+    # Use DRF parsers for both JSON and multipart/form-data
+    if request.content_type == "application/json":
+        print("Raw JSON body:", request.body)
+        try:
+            data = json.loads(request.body)
+            print("Parsed JSON data:", data)
+        except json.JSONDecodeError:
+            return Response({"error": "Invalid JSON"}, status=400)
+    elif request.content_type.startswith("multipart/form-data"):
+        print("Multipart data:", request.data)
+        print("Files:", request.FILES)
+
+    # Validate and update user profile
+    serializer = UserSerializer(request.user, data=request.data, partial=True)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+    else:
+        print("Serializer errors:", serializer.errors)
+        return Response(serializer.errors, status=400)
+
+
+
+def get_tag_suggestions(request):
+    query = request.GET.get('search', '')
+    if query:
+        tags = Tag.objects.filter(name__icontains=query)[:10]
+        return JsonResponse({'tags': list(tags.values('id', 'name'))})
+    return JsonResponse({'tags': []})
