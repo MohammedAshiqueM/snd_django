@@ -33,6 +33,9 @@ urlpatterns = [
     path('profile/', views.get_user_profile, name='profile'),
     path('profile/update/', views.update_user_profile, name='profile-update'),
     path('tags/', views.get_tag_suggestions, name='tag-suggestions'),
+    path('blog/create/', views.blog_creation, name='blog-create'),
+    path('blogs/', views.get_all_blogs, name='blogs'), 
+    path('skills/', views.get_user_skills, name='blogs')  
     
     
 ]

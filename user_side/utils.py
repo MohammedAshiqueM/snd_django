@@ -1,5 +1,9 @@
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework_simplejwt.authentication import JWTAuthentication
+import os
+from django.utils.timezone import now
+
 
 def api_response(status, message, data=None,):
     response = {
@@ -10,7 +14,6 @@ def api_response(status, message, data=None,):
         response.update(data)
     return Response(response, status=status)
 
-from rest_framework_simplejwt.authentication import JWTAuthentication
 
 class CustomJWTAuthentication(JWTAuthentication):
     def authenticate(self, request):
@@ -31,8 +34,6 @@ class CustomJWTAuthentication(JWTAuthentication):
         validated_token = self.get_validated_token(raw_token)
         return self.get_user(validated_token), validated_token
 
-import os
-from django.utils.timezone import now
 
 def user_profile_image_path(instance, filename):
     return os.path.join('profile_images', str(instance.id), filename)
