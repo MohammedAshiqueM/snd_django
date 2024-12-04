@@ -582,6 +582,7 @@ def get_all_blogs(request):
         'total_blogs': total_blogs
     })
 
+from django.http import JsonResponse, Http404
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -589,3 +590,15 @@ def get_user_skills(request):
     """To get authenticated user's skills"""
     user_skills = request.user.skills.all() 
     return Response({'skills': [skill.name for skill in user_skills]})
+
+from rest_framework.generics import RetrieveAPIView
+def blog_detail(request, slug):
+    try:
+        blog = Blog.objects.get(slug=slug)
+        serializer = BlogSerializer(blog)
+        return JsonResponse({
+            'data': serializer.data,
+            
+        })
+    except Blog.DoesNotExist:
+        raise Http404("Blog not found")

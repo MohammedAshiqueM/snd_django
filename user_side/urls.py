@@ -35,7 +35,8 @@ urlpatterns = [
     path('tags/', views.get_tag_suggestions, name='tag-suggestions'),
     path('blog/create/', views.blog_creation, name='blog-create'),
     path('blogs/', views.get_all_blogs, name='blogs'), 
-    path('skills/', views.get_user_skills, name='blogs')  
+    path('skills/', views.get_user_skills, name='skills'),
+    path('blog/<slug:slug>/', views.blog_detail, name='blog_detail'),
     
     
 ]
