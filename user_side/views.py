@@ -96,11 +96,14 @@ class MyTokenObtainPairView(TokenObtainPairView):
             access_token = data.get("access")
             refresh_token = data.get("refresh")
 
+            serialized_user = UserSerializer(user).data
             http_response = api_response(
                 status.HTTP_200_OK,
                 "Login successful",
                 {"access_token": access_token,
-                "refresh_token": refresh_token,}
+                "refresh_token": refresh_token,
+                "user":serialized_user
+                }
             )
 
             if access_token:
@@ -141,7 +144,19 @@ class CustomTokenRefreshView(TokenRefreshView):
         request.data['refresh'] = refresh_token
 
         try:
-            return super().post(request, *args, **kwargs)
+            original_response = super().post(request, *args, **kwargs)
+            data = original_response.data
+            
+            token = RefreshToken(refresh_token)
+            user_id = token.payload.get('user_id') 
+
+            user = User.objects.get(id=user_id) 
+
+            user_serializer = UserSerializer(user)
+            
+            data['user'] = user_serializer.data
+
+            return Response(data, status=status.HTTP_200_OK)
         except (TokenError, InvalidToken) as e:
             return Response({"error": "Invalid refresh token"}, status=status.HTTP_401_UNAUTHORIZED)
 
@@ -236,11 +251,14 @@ def verify_otp(request):
             
             access_token = str(tokens.access_token)
             refresh_token = str(tokens)
+            
+            serialized_user = UserSerializer(user).data
                 
             http_response = JsonResponse({
             "message": "User verified and Login successfully",
             "access_token": access_token,
             "refresh_token": refresh_token,
+            "user":serialized_user
             })
 
             if access_token:
@@ -329,8 +347,12 @@ def google_login(request):
 
         refresh = RefreshToken.for_user(user)
         access_token = str(refresh.access_token)
+        serialized_user = UserSerializer(user).data
 
-        response = JsonResponse({'message': 'Login successful'})
+        response = JsonResponse({
+            'message': 'Login successful',
+            "user":serialized_user
+            })
         response.set_cookie(
             key='access_token',
             value=access_token,
