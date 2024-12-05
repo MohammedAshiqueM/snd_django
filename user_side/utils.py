@@ -11,7 +11,10 @@ def api_response(status, message, data=None,):
         "message" : message,
     }
     if data is not None:
-        response.update(data)
+        if isinstance(data, dict):
+            response.update(data)
+        else:
+            response["data"] = data 
     return Response(response, status=status)
 
 
