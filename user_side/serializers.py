@@ -54,17 +54,15 @@ class UserSerializer(serializers.ModelSerializer):
         return UserSkillSerializer(obj.skills.through.objects.filter(user=obj), many=True).data
     
     def create(self, validated_data):
-        # Hash the password before saving
         validated_data['password'] = make_password(validated_data.get('password'))
         return super().create(validated_data)
  
     def update(self, instance, validated_data):
-        print(f"Validated data received for update: {validated_data}")  # Debug here
+        print(f"Validated data received for update: {validated_data}")
         skills = validated_data.pop("skills", [])
-        print(f"Skills extracted for update: {skills}")  # Debug here
+        print(f"Skills extracted for update: {skills}")
 
-        # Update skills
-        instance.skills.set(skills)  # Use `.set()` to update ManyToManyField.
+        instance.skills.set(skills)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
