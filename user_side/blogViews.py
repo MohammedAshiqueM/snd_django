@@ -2,20 +2,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.contrib.auth import get_user_model
 from rest_framework.permissions import IsAuthenticated,IsAdminUser
-from rest_framework import viewsets, mixins
-from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
-import logging
-from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
-from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework_simplejwt.views import TokenObtainPairView
 from django.views.decorators.csrf import csrf_exempt
-from django.utils.timezone import now, timedelta
-# from dotenv import load_dotenv
-from social_django.utils import psa
-from decouple import config
-import os
 from .models import (
     Follower, Tag, UserSkill, Blog, BlogTag, BlogVote, BlogComment, 
     Question, QuestionTag, QuestionVote, SkillSharingRequest, RequestTag,
@@ -30,19 +18,9 @@ from .serializers import (
     )
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from google.auth.transport import requests
-from google.oauth2 import id_token
-# from django.contrib.auth.models import User
-from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenRefreshView
-from rest_framework.exceptions import AuthenticationFailed
 from django.http import JsonResponse
-from django.urls import reverse
 import json
-from django.contrib.auth.hashers import make_password
 from .utils import api_response
-from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
-from rest_framework.permissions import AllowAny
 from django.db.models import Q
 import math
 from django.http import JsonResponse, Http404
@@ -53,6 +31,9 @@ User = get_user_model()
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def blog_creation(request):
+    """
+    To create blog 
+    """
     user = request.user
     data = request.data.copy()
     
@@ -109,16 +90,19 @@ def blog_creation(request):
             
             return api_response(status.HTTP_201_CREATED,"Blog created successfully",serializer.data,)
         else:
-            return Response(status.HTTP_400_BAD_REQUEST,"Unexpected error",serializer.errors,)
+            return api_response(status.HTTP_400_BAD_REQUEST,"Unexpected error",serializer.errors,)
     except Exception as e:
         return api_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             str(e),
         )
+        
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_all_blogs(request):
-    """To get all blogs with search and category filter"""
+    """
+    To get all blogs with search and category filter
+    """
     search_query = request.query_params.get('search', None)
     category = request.query_params.get('category', None)
     page = request.query_params.get('page', 1)
@@ -161,16 +145,10 @@ def get_all_blogs(request):
         'total_blogs': total_blogs
     })
 
-
-# @api_view(['GET'])
-# @permission_classes([IsAuthenticated])
-# def get_user_skills(request):
-#     """To get authenticated user's skills"""
-#     user_skills = request.user.skills.all() 
-#     return Response({'skills': [skill.name for skill in user_skills]})
-
-from rest_framework.generics import RetrieveAPIView
 def blog_detail(request, slug):
+    """
+    To get a blog details using slug
+    """
     try:
         blog = Blog.objects.get(slug=slug)
         serializer = BlogSerializer(blog)
@@ -184,6 +162,9 @@ def blog_detail(request, slug):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def add_comment(request, slug):
+    """
+    Adds comment to the blog
+    """
     try:
         blog = Blog.objects.get(slug=slug)
     except Blog.DoesNotExist:
@@ -197,6 +178,9 @@ def add_comment(request, slug):
 
 @api_view(['GET'])
 def get_comments(request, slug):
+    """
+    To get all the comments of a blog
+    """
     try:
         blog = Blog.objects.get(slug=slug)
     except Blog.DoesNotExist:

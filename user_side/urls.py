@@ -17,8 +17,7 @@ Including another URLconf
 from django.urls import path
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .views import MyTokenObtainPairView,CustomTokenRefreshView
-from . import views
-from . import blogViews
+from . import views, blogViews, questionView
 
 
 urlpatterns = [
@@ -43,6 +42,11 @@ urlpatterns = [
     path('blog/<slug:slug>/', blogViews.blog_detail, name='blog_detail'),
     path('blog/<slug:slug>/add-comment/', blogViews.add_comment, name='add-comment'),
     path('blog/<slug:slug>/comments/', blogViews.get_comments, name='comments'),
+    #questionView
+    path('question/create/', questionView.question_creation, name='question-create'),
+    path('questions/', questionView.get_all_question, name='questions'),
+    path('question/<slug:slug>/', questionView.question_detail, name='question-detail'),
+    
     
     
 ]
