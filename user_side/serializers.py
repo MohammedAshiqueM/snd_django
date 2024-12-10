@@ -3,7 +3,7 @@ from django.contrib.auth.hashers import make_password
 from rest_framework import serializers
 from .models import (
     User, Follower, Tag, UserSkill, Blog, BlogTag, BlogVote, BlogComment, 
-    Question, QuestionTag, QuestionVote, SkillSharingRequest, RequestTag,
+    Question, QuestionTag, QuestionVote, Answer, SkillSharingRequest, RequestTag,
     Schedule, Rating, Report, TimeTransaction
 )
 
@@ -147,6 +147,14 @@ class QuestionVoteSerializer(serializers.ModelSerializer):
         model = QuestionVote
         fields = ['user', 'question', 'vote']
 
+class AnswerSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+    question = QuestionSerializer(read_only=True)
+    
+    class Meta:
+        model = Answer
+        fields = ['id', 'question', 'user', 'content', 'created_at']
+        
 class SkillSharingRequestSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     tags = serializers.SerializerMethodField()

@@ -6,7 +6,7 @@ from rest_framework.decorators import api_view, permission_classes, authenticati
 from django.views.decorators.csrf import csrf_exempt
 from .models import (
     Follower, Tag, UserSkill, Blog, BlogTag, BlogVote, BlogComment, 
-    Question, QuestionTag, QuestionVote, SkillSharingRequest, RequestTag,
+    Question, QuestionTag, QuestionVote, Answer, SkillSharingRequest, RequestTag,
     Schedule, Rating, Report, TimeTransaction
 )
 from .serializers import (
@@ -14,7 +14,7 @@ from .serializers import (
     RatingSerializer,ReportSerializer,BlogTagSerializer,BlogVoteSerializer,
     FollowerSerializer,QuestionSerializer,ScheduleSerializer,UserSkillSerializer,
     RequestTagSerializer,BlogCommentSerializer,QuestionTagSerializer,QuestionVoteSerializer,
-    SkillSharingRequest,TimeTransactionSerializer,SkillSharingRequestSerializer
+    AnswerSerializer,SkillSharingRequest,TimeTransactionSerializer,SkillSharingRequestSerializer
     )
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -34,17 +34,17 @@ def question_creation(request):
     To create questions
     """
     user = request.user
-    data = request.data
+    data = request.data.copy()
     
     try:
-        tags = json.load(data.get("tags",[]))
+        tags = json.loads(data.get("tags",[]))
     except json.JSONDecodeError:
         return api_response(
             status.HTTP_400_BAD_REQUEST,
             "Invalid tags"
         )
         
-    serializer = TagSerializer(data=data)
+    serializer = QuestionSerializer(data=data)
     
     try:
         if serializer.is_valid():
@@ -66,7 +66,7 @@ def question_creation(request):
                 )
                 
             for tag in valid_tags:
-                QuestionTyyag.objects.create(question=question, tag=tag)
+                QuestionTag.objects.create(question=question, tag=tag)
                 
             return api_response(status.HTTP_201_CREATED,"Question created successfully",serializer.data)
         else:
@@ -122,12 +122,12 @@ def  get_all_question(request):
         'total_questions':total_questions
     })
     
-def question_detail(request, slug):
+def question_detail(request, pk):
     """
     To get a question details using slug
     """
     try:
-        question = Question.objects.get(slug=slug)
+        question = Question.objects.get(pk=pk)
         serializer = QuestionSerializer(question)
         return JsonResponse({
             'data': serializer.data
@@ -135,3 +135,33 @@ def question_detail(request, slug):
     except Question.DoesNotExist:
         raise Http404("Question not found")
         
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def add_answer(request, pk):
+    """
+    Adds answer to the question
+    """
+    try:
+        question = Question.objects.get(pk=pk)
+    except Question.DoesNotExist:
+        return api_response(status.HTTP_404_NOT_FOUND,"Question not found",)
+    
+    serializer = AnswerSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save(user=request.user, question=question)
+        return api_response(status.HTTP_201_CREATED,"answer added successfully",serializer.data,)
+    return api_response(status.HTTP_400_BAD_REQUEST,"Error occur while adding answer",serializer.errors)
+
+@api_view(['GET'])
+def get_answers(request, pk):
+    """
+    To get all the answer of question
+    """
+    try:
+        question = Question.objects.get(pk=pk)
+    except Question.DoesNotExist:
+        return api_response(status.HTTP_404_NOT_FOUND,"Question not found")
+
+    answer = Answer.objects.filter(question=question).order_by('-created_at')
+    serializer = BlogCommentSerializer(answer, many=True)
+    return api_response(status.HTTP_200_OK,"success",serializer.data)

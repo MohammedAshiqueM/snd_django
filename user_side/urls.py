@@ -45,7 +45,10 @@ urlpatterns = [
     #questionView
     path('question/create/', questionView.question_creation, name='question-create'),
     path('questions/', questionView.get_all_question, name='questions'),
-    path('question/<slug:slug>/', questionView.question_detail, name='question-detail'),
+    path('question/<int:pk>/', questionView.question_detail, name='question-detail'),
+    path('question/<int:pk>/add-answer/', questionView.add_answer, name='add-answer'),
+    path('question/<int:pk>/answers/', questionView.get_answers, name='answers'),
+    
     
     
     
