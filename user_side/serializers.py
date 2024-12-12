@@ -68,8 +68,6 @@ class UserSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 
-
-
     
 class FollowerSerializer(serializers.ModelSerializer):
     follower = UserSerializer(read_only=True)
@@ -90,17 +88,40 @@ class BlogSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     tags = serializers.SerializerMethodField()
     vote_count = serializers.IntegerField(read_only=True)
+    user_vote = serializers.SerializerMethodField()
+    image = serializers.SerializerMethodField()
     
     class Meta:
         model = Blog
         fields = [
             'id', 'user', 'title', 'slug', 'body_content', 
             'image', 'created_at', 'updated_at', 'tags', 
-            'is_published', 'view_count', 'vote_count'
+            'is_published', 'view_count', 'vote_count' , 'user_vote'
         ]
     
     def get_tags(self, obj):
         return BlogTagSerializer(obj.tags.through.objects.filter(blog=obj), many=True).data
+    def get_user_vote(self, obj):
+        """Get the logged-in user's vote for the blog."""
+        request = self.context.get('request', None)
+        if request and request.user.is_authenticated:
+            vote = obj.blogvote_set.filter(user=request.user).first()
+            if vote:
+                return 'upvote' if vote.vote else 'downvote'
+        return None
+    def get_image(self, obj):
+        request = self.context.get('request')
+        if obj.image:
+            image_url = obj.image.url
+            if request:
+                absolute_url = request.build_absolute_uri(image_url)
+                print(f"Absolute URL: {absolute_url}")  # Debugging
+                return absolute_url
+            print(f"Relative URL: {image_url}")  # Debugging
+            return image_url
+        print("No image found.")  # Debugging
+        return None
+
 
 class BlogVoteSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
@@ -133,7 +154,7 @@ class QuestionSerializer(serializers.ModelSerializer):
         model = Question
         fields = [
             'id', 'user', 'title', 'body_content', 
-            'created_at', 'tags'
+            'created_at', 'tags', 'view_count'
         ]
     
     def get_tags(self, obj):

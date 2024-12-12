@@ -22,6 +22,7 @@ from django.http import JsonResponse
 import json
 from .utils import api_response
 from django.db.models import Q
+from django.db import transaction, models
 import math
 from django.http import JsonResponse, Http404
 
@@ -128,6 +129,11 @@ def question_detail(request, pk):
     """
     try:
         question = Question.objects.get(pk=pk)
+        with transaction.atomic():
+            question.view_count = models.F('view_count') + 1
+            question.save(update_fields=['view_count'])
+        
+        question.refresh_from_db() 
         serializer = QuestionSerializer(question)
         return JsonResponse({
             'data': serializer.data
@@ -165,3 +171,37 @@ def get_answers(request, pk):
     answer = Answer.objects.filter(question=question).order_by('-created_at')
     serializer = BlogCommentSerializer(answer, many=True)
     return api_response(status.HTTP_200_OK,"success",serializer.data)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def question_vote(request, pk):
+    try:
+        user = request.user
+        question = Question.objects.get(pk=pk)
+        vote_type = request.data.get('vote')
+
+        if not vote_type or vote_type not in ['upvote', 'downvote']:
+            return Response({"error": "Invalid vote type"}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing_vote = QuestionVote.objects.filter(user=user, question=question).first()
+
+        if existing_vote:
+            if (vote_type == 'upvote' and existing_vote.vote) or (vote_type == 'downvote' and not existing_vote.vote):
+                existing_vote.delete()
+            else:
+                existing_vote.vote = vote_type == 'upvote'
+                existing_vote.save()
+        else:
+            QuestionVote.objects.create(
+                user=user,
+                question=question,
+                vote=vote_type == 'upvote'
+            )
+
+        vote_count = question.vote_count
+        return Response({"vote_count": vote_count}, status=status.HTTP_200_OK)
+
+    except Question.DoesNotExist:
+        return Response({"error": "Question not found"}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

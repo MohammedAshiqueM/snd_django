@@ -380,9 +380,15 @@ class Question(models.Model):
     body_content = models.TextField()
     created_at = models.DateTimeField(default=timezone.now)
     tags = models.ManyToManyField(Tag, through='QuestionTag')
-
+    view_count = models.PositiveIntegerField(default=0)
     class Meta:
         db_table = 'questions'
+        
+    @property
+    def vote_count(self):
+        """Get the total number of votes (positive - negative)"""
+        return self.questionvote_set.filter(vote=True).count() - \
+               self.questionvote_set.filter(vote=False).count()
 
 class QuestionTag(models.Model):
     question = models.ForeignKey(Question, on_delete=models.CASCADE)

@@ -22,8 +22,10 @@ from django.http import JsonResponse
 import json
 from .utils import api_response
 from django.db.models import Q
+from django.db import transaction, models
 import math
 from django.http import JsonResponse, Http404
+from django.db.models import Count,F
 
 User = get_user_model()
 
@@ -144,21 +146,51 @@ def get_all_blogs(request):
         'current_page': page,
         'total_blogs': total_blogs
     })
-
+    
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def blog_detail(request, slug):
     """
     To get a blog details using slug
     """
     try:
         blog = Blog.objects.get(slug=slug)
+        
+        # Increment view count atomically
+        with transaction.atomic():
+            blog.view_count = models.F('view_count') + 1
+            blog.save(update_fields=['view_count'])
+        
+        blog.refresh_from_db()
+        
+        # Prepare serializer data
         serializer = BlogSerializer(blog)
-        return JsonResponse({
-            'data': serializer.data,
+        
+        # Get the serialized data as a dictionary
+        data = serializer.data
+        
+        # Check user's vote status if authenticated
+        user_vote = None
+        if request.user.is_authenticated:
+            existing_vote = BlogVote.objects.filter(
+                user=request.user, 
+                blog=blog
+            ).first()
             
+            if existing_vote:
+                user_vote = 'upvote' if existing_vote.vote else 'downvote'
+        
+        # Add user_vote directly to the data dictionary
+        data['user_vote'] = user_vote
+        
+        return JsonResponse({
+            'data': data
         })
+        
     except Blog.DoesNotExist:
         raise Http404("Blog not found")
-
+    
+    
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def add_comment(request, slug):
@@ -189,3 +221,37 @@ def get_comments(request, slug):
     comments = BlogComment.objects.filter(blog=blog).order_by('-created_at')
     serializer = BlogCommentSerializer(comments, many=True)
     return api_response(status.HTTP_200_OK,"success",serializer.data)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def vote_blog(request, slug):
+    try:
+        user = request.user
+        blog = Blog.objects.get(slug=slug)
+        vote_type = request.data.get('vote')
+
+        if not vote_type or vote_type not in ['upvote', 'downvote']:
+            return Response({"error": "Invalid vote type"}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing_vote = BlogVote.objects.filter(user=user, blog=blog).first()
+
+        if existing_vote:
+            if (vote_type == 'upvote' and existing_vote.vote) or (vote_type == 'downvote' and not existing_vote.vote):
+                existing_vote.delete()
+            else:
+                existing_vote.vote = vote_type == 'upvote'
+                existing_vote.save()
+        else:
+            BlogVote.objects.create(
+                user=user,
+                blog=blog,
+                vote=vote_type == 'upvote'
+            )
+
+        vote_count = blog.vote_count
+        return Response({"vote_count": vote_count}, status=status.HTTP_200_OK)
+
+    except Blog.DoesNotExist:
+        return Response({"error": "Blog not found"}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
