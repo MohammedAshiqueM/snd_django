@@ -80,7 +80,7 @@ def question_creation(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def  get_all_question(request):
+def get_all_question(request):
     """
     To get all questions with search and category filter
     """

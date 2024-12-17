@@ -101,6 +101,7 @@ class BlogSerializer(serializers.ModelSerializer):
     
     def get_tags(self, obj):
         return BlogTagSerializer(obj.tags.through.objects.filter(blog=obj), many=True).data
+    
     def get_user_vote(self, obj):
         """Get the logged-in user's vote for the blog."""
         request = self.context.get('request', None)
@@ -109,6 +110,7 @@ class BlogSerializer(serializers.ModelSerializer):
             if vote:
                 return 'upvote' if vote.vote else 'downvote'
         return None
+    
     def get_image(self, obj):
         request = self.context.get('request')
         if obj.image:

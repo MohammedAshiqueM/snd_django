@@ -17,7 +17,7 @@ Including another URLconf
 from django.urls import path
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .views import MyTokenObtainPairView,CustomTokenRefreshView
-from . import views, blogViews, questionView
+from . import views, blogViews, questionView, usersView
 
 
 urlpatterns = [
@@ -36,6 +36,7 @@ urlpatterns = [
     path('profile/update/', views.update_user_profile, name='profile-update'),
     path('tags/', views.get_tag_suggestions, name='tag-suggestions'),
     path('skills/', views.get_user_skills, name='skills'),
+    
     #blogView
     path('blog/create/', blogViews.blog_creation, name='blog-create'),
     path('blogs/', blogViews.get_all_blogs, name='blogs'), 
@@ -43,7 +44,6 @@ urlpatterns = [
     path('blog/<slug:slug>/add-comment/', blogViews.add_comment, name='add-comment'),
     path('blog/<slug:slug>/comments/', blogViews.get_comments, name='comments'),
     path('blog/<slug:slug>/vote/', blogViews.vote_blog, name='blog-vote'),
-    
     #questionView
     path('question/create/', questionView.question_creation, name='question-create'),
     path('questions/', questionView.get_all_question, name='questions'),
@@ -51,9 +51,8 @@ urlpatterns = [
     path('question/<int:pk>/add-answer/', questionView.add_answer, name='add-answer'),
     path('question/<int:pk>/answers/', questionView.get_answers, name='answers'),
     path('question/<int:pk>/vote/', questionView.question_vote, name='question-vote'),
-    
-    
-    
+    #usersView
+    path('users/', usersView.list_users, name='users'),
     
 ]
 
