@@ -50,6 +50,7 @@ from google.auth.transport.requests import Request
 from django.core.paginator import Paginator
 from django.db.models import Q
 import math
+import time
 from django.contrib.auth import logout as auth_logout
 
 
@@ -165,9 +166,8 @@ class CustomTokenRefreshView(TokenRefreshView):
 @api_view(['POST'])
 def logout_view(request):
     try:
-        # Invalidate or blacklist the token if using token-based authentication
-        # Clear user session
-        auth_logout(request)  # Django's built-in logout method
+
+        auth_logout(request)
         
         response = Response({'detail': 'Logout successful'}, status=status.HTTP_200_OK)
         
@@ -327,10 +327,6 @@ def resend_otp(request):
 
 
 GOOGLE_CLIENT_ID = config('GOOGLE_CLIENT_ID', cast=str).strip()
-from google.oauth2 import id_token
-from google.auth.transport import requests
-import time
-from rest_framework.exceptions import AuthenticationFailed
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -338,37 +334,64 @@ def google_login(request):
     id_token_str = request.data.get('id_token')
     if not id_token_str:
         return Response({'error': 'No token provided'}, status=status.HTTP_400_BAD_REQUEST)
-
+    
     try:
         GOOGLE_CLIENT_ID = config('GOOGLE_CLIENT_ID')
         idinfo = id_token.verify_oauth2_token(id_token_str, requests.Request(), GOOGLE_CLIENT_ID)
-
-        # Validate token expiration
-        if idinfo['exp'] < time.time():
-            raise AuthenticationFailed('Token has expired')
-
+        
         # Validate audience
         if idinfo['aud'] != GOOGLE_CLIENT_ID:
             raise AuthenticationFailed('Invalid audience')
-
-        # Process user data
+        
+        # Process user data fron idinfo
         email = idinfo.get('email')
         name = idinfo.get('name')
         User = get_user_model()
-        user, created = User.objects.get_or_create(username=email, defaults={'email': email, 'first_name': name})
-
-        # Issue tokens
+        
+        user, created = User.objects.get_or_create(
+            username=email, 
+            defaults={
+                'email': email, 
+                'first_name': name,
+                'is_active': True
+            }
+        )
+        
         refresh = RefreshToken.for_user(user)
         access_token = str(refresh.access_token)
-        response = Response({'message': 'Login successful', 'user': UserSerializer(user).data})
-        response.set_cookie('access_token', access_token, httponly=True, secure=True, samesite='Lax')
+        refresh_token = str(refresh)
+        
+        response = Response({
+            'message': 'Login successful', 
+            'user': UserSerializer(user).data,
+            'access_token': access_token,
+            'refresh_token': refresh_token
+        })
+        
+        response.set_cookie(
+            'access_token', 
+            access_token, 
+            httponly=True, 
+            secure=False,  # Set to True in production
+            samesite='Lax',
+            max_age=3600  # 1 hour
+        )
+        
+        response.set_cookie(
+            'refresh_token', 
+            refresh_token, 
+            httponly=True, 
+            secure=False,  # Set to True in production
+            samesite='Lax',
+            max_age=7 * 24 * 3600  # 7 days
+        )
+        
         return response
-
+    
     except ValueError as e:
         return Response({'error': f'Invalid token: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
     except AuthenticationFailed as e:
-        return Response({'error': str(e)}, status=status.HTTP_401_UNAUTHORIZED)
-    
+        return Response({'error': str(e)}, status=status.HTTP_401_UNAUTHORIZED)  
 @csrf_exempt
 def forgot_password(request):
     if request.method == "POST":

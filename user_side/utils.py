@@ -21,7 +21,7 @@ def api_response(status, message, data=None,):
 class CustomJWTAuthentication(JWTAuthentication):
     def authenticate(self, request):
         print("body is :",request.body)
-        print("the.......",request.COOKIES)
+        # print("the.......",request.COOKIES)
         header = self.get_header(request)
         raw_token = None
 

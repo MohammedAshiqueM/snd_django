@@ -38,21 +38,27 @@ class UserPagination(PageNumberPagination):
 @permission_classes([IsAuthenticated])
 def list_users(request):
     """
-    To list users
+    To list users with search and category filter
     """
     search_query = request.query_params.get('search', '').lower()
-    category = request.query_params.get('category', '').lower()
+    category = request.query_params.get('category', None)
     users = User.objects.all()
 
+    # Apply search filter
     if search_query:
         users = users.filter(
             Q(username__icontains=search_query) | 
             Q(email__icontains=search_query) | 
             Q(first_name__icontains=search_query) | 
             Q(last_name__icontains=search_query) |
-            Q(skills__tag__name__icontains=search_query) 
-        )
+            Q(userskill__tag__name__icontains=search_query)
+        ).distinct()
 
+    # Apply category filter
+    if category and category != 'All':
+        users = users.filter(userskill__tag__name=category).distinct()
+
+    # Paginate results
     paginator = UserPagination()
     result_page = paginator.paginate_queryset(users, request)
     serializer = UserSerializer(result_page, many=True)

@@ -89,7 +89,7 @@ class BlogSerializer(serializers.ModelSerializer):
     tags = serializers.SerializerMethodField()
     vote_count = serializers.IntegerField(read_only=True)
     user_vote = serializers.SerializerMethodField()
-    image = serializers.SerializerMethodField()
+    image = serializers.ImageField(required=False)
     
     class Meta:
         model = Blog

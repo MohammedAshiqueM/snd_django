@@ -117,8 +117,8 @@ def get_all_blogs(request):
         page = 1
         limit = 5
     
-    print(f"Search Query: {search_query}, Category: {category}")
-    print(f"page: {page}, limit: {limit}")
+    # print(f"Search Query: {search_query}, Category: {category}")
+    # print(f"page: {page}, limit: {limit}")
     
     blogs = Blog.objects.all()
     
