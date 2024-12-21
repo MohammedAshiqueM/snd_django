@@ -63,3 +63,13 @@ def list_users(request):
     result_page = paginator.paginate_queryset(users, request)
     serializer = UserSerializer(result_page, many=True)
     return paginator.get_paginated_response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_details(requsest,pk):
+    """
+    To give details of a perticular user
+    """
+    user = User.objects.get(pk=pk)
+    serializer = UserSerializer(user)
+    return Response(serializer.data)

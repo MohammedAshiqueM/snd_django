@@ -60,6 +60,9 @@ User = get_user_model()
 
 class MyTokenObtainPairView(TokenObtainPairView):
     """Login the user via jwt"""
+    
+    # serializer_class = MyTokenObtainPairSerializer  # later uncomment this for admin authentication
+    
     def post(self, request, *args, **kwargs):
         try:
             email = request.data.get('username', '').strip()
@@ -100,12 +103,15 @@ class MyTokenObtainPairView(TokenObtainPairView):
             refresh_token = data.get("refresh")
 
             serialized_user = UserSerializer(user).data
+            # role = "admin" if user.is_staff or user.is_superuser else "user"  # later uncomment this for admin authentication
+
             http_response = api_response(
                 status.HTTP_200_OK,
                 "Login successful",
                 {"access_token": access_token,
                 "refresh_token": refresh_token,
-                "user":serialized_user
+                "user":serialized_user,
+                # "role": role, # later uncomment this for admin authentication
                 }
             )
 
