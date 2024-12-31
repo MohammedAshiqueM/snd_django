@@ -117,8 +117,8 @@ def get_all_blogs(request):
         page = 1
         limit = 5
     
-    print(f"Search Query: {search_query}, Category: {category}")
-    print(f"page: {page}, limit: {limit}")
+    # print(f"Search Query: {search_query}, Category: {category}")
+    # print(f"page: {page}, limit: {limit}")
     
     blogs = Blog.objects.all()
     
@@ -156,20 +156,16 @@ def blog_detail(request, slug):
     try:
         blog = Blog.objects.get(slug=slug)
         
-        # Increment view count atomically
         with transaction.atomic():
             blog.view_count = models.F('view_count') + 1
             blog.save(update_fields=['view_count'])
         
         blog.refresh_from_db()
         
-        # Prepare serializer data
         serializer = BlogSerializer(blog)
         
-        # Get the serialized data as a dictionary
         data = serializer.data
         
-        # Check user's vote status if authenticated
         user_vote = None
         if request.user.is_authenticated:
             existing_vote = BlogVote.objects.filter(
@@ -179,9 +175,16 @@ def blog_detail(request, slug):
             
             if existing_vote:
                 user_vote = 'upvote' if existing_vote.vote else 'downvote'
-        
-        # Add user_vote directly to the data dictionary
+
+            # blog_author = blog.user 
+            # is_following = blog_author.followers.filter(id=request.user.id).exists()
+            is_following = Follower.objects.filter(
+                follower=request.user, 
+                following=blog.user 
+            ).exists()
+            
         data['user_vote'] = user_vote
+        data['is_following'] = is_following
         
         return JsonResponse({
             'data': data

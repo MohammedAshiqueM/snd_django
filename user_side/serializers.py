@@ -6,14 +6,56 @@ from .models import (
     Question, QuestionTag, QuestionVote, Answer, SkillSharingRequest, RequestTag,
     Schedule, Rating, Report, TimeTransaction
 )
+from enum import Enum
+
+class UserRole(Enum):
+    ADMIN = "admin"
+    STAFF = "staff"
+    USER = "user"
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
-        token['is_staff'] = user.is_staff
-        token['is_superuser'] = user.is_superuser
+        
+        # Add custom claims
+        token['email'] = user.email
+        token['username'] = user.username
+        
+        # Define role based on user permissions
+        if user.is_superuser:
+            role = UserRole.ADMIN.value
+        elif user.is_staff:
+            role = UserRole.STAFF.value
+        else:
+            role = UserRole.USER.value
+            
+        token['role'] = role
         return token
+    
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        user = self.user
+        
+        # Define role using the same logic as above
+        if user.is_superuser:
+            role = UserRole.ADMIN.value
+        elif user.is_staff:
+            role = UserRole.STAFF.value
+        else:
+            role = UserRole.USER.value
+            
+        data['user'] = {
+            'id': user.id,
+            'email': user.email,
+            'username': user.username,
+            'is_staff': user.is_staff,
+            'is_superuser': user.is_superuser,
+            'role': role
+        }
+        
+        return data
+
 
 class TagSerializer(serializers.ModelSerializer):
     class Meta:
@@ -33,7 +75,7 @@ class UserSerializer(serializers.ModelSerializer):
     )
     followers = serializers.IntegerField(source='follower_count', read_only=True)
     following = serializers.IntegerField(source='following_count', read_only=True)
-    
+    role = serializers.SerializerMethodField()
     class Meta:
         model = User
         fields = [
@@ -41,7 +83,7 @@ class UserSerializer(serializers.ModelSerializer):
             'profile_image', 'banner_image', 'linkedin_url', 
             'github_url', 'about', 'rating', 'time_balance', 
             'skills', 'followers', 'following', 
-            'last_active'
+            'last_active','role'
         ]
         extra_kwargs = {
             'password': {'write_only': True},
@@ -68,6 +110,8 @@ class UserSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 
+    def get_role(self, obj):
+        return "admin" if obj.is_staff or obj.is_superuser else "user"
     
 class FollowerSerializer(serializers.ModelSerializer):
     follower = UserSerializer(read_only=True)
@@ -89,7 +133,7 @@ class BlogSerializer(serializers.ModelSerializer):
     tags = serializers.SerializerMethodField()
     vote_count = serializers.IntegerField(read_only=True)
     user_vote = serializers.SerializerMethodField()
-    image = serializers.SerializerMethodField()
+    image = serializers.ImageField(required=False)
     
     class Meta:
         model = Blog
@@ -101,6 +145,7 @@ class BlogSerializer(serializers.ModelSerializer):
     
     def get_tags(self, obj):
         return BlogTagSerializer(obj.tags.through.objects.filter(blog=obj), many=True).data
+    
     def get_user_vote(self, obj):
         """Get the logged-in user's vote for the blog."""
         request = self.context.get('request', None)
@@ -109,6 +154,7 @@ class BlogSerializer(serializers.ModelSerializer):
             if vote:
                 return 'upvote' if vote.vote else 'downvote'
         return None
+    
     def get_image(self, obj):
         request = self.context.get('request')
         if obj.image:

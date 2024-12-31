@@ -50,6 +50,9 @@ from google.auth.transport.requests import Request
 from django.core.paginator import Paginator
 from django.db.models import Q
 import math
+import time
+from django.contrib.auth import logout as auth_logout
+
 
 User = get_user_model()
 
@@ -57,6 +60,9 @@ User = get_user_model()
 
 class MyTokenObtainPairView(TokenObtainPairView):
     """Login the user via jwt"""
+    
+    serializer_class = MyTokenObtainPairSerializer
+    
     def post(self, request, *args, **kwargs):
         try:
             email = request.data.get('username', '').strip()
@@ -97,12 +103,15 @@ class MyTokenObtainPairView(TokenObtainPairView):
             refresh_token = data.get("refresh")
 
             serialized_user = UserSerializer(user).data
+            # role = "admin" if user.is_staff or user.is_superuser else "user"
+
             http_response = api_response(
                 status.HTTP_200_OK,
                 "Login successful",
                 {"access_token": access_token,
                 "refresh_token": refresh_token,
-                "user":serialized_user
+                "user":serialized_user,
+                # "role": role,
                 }
             )
 
@@ -162,23 +171,28 @@ class CustomTokenRefreshView(TokenRefreshView):
 
 @api_view(['POST'])
 def logout_view(request):
-    response = Response({'detail': 'Logout successful'}, status=status.HTTP_200_OK)
-    
-    cookie_names = [
-        'access_token', 
-        'refresh_token', 
-        '_ga', 
-        '_gid', 
-        'csrftoken', 
-        'sessionid',
+    try:
+
+        auth_logout(request)
         
-    ]
-    
-    # Delete specific cookies
-    for cookie_name in cookie_names:
-        response.delete_cookie(cookie_name, path='/')
-    
-    return response
+        response = Response({'detail': 'Logout successful'}, status=status.HTTP_200_OK)
+        
+        # Delete specific cookies
+        cookie_names = [
+            'access_token',
+            'refresh_token',
+            '_ga',
+            '_gid',
+            'csrftoken',
+            'sessionid',
+        ]
+        
+        for cookie_name in cookie_names:
+            response.delete_cookie(cookie_name, path='/')
+        
+        return response
+    except Exception as e:
+        return Response({'detail': 'Logout failed', 'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 def get_tokens_for_user(user):
     refresh = RefreshToken.for_user(user)
@@ -323,56 +337,67 @@ GOOGLE_CLIENT_ID = config('GOOGLE_CLIENT_ID', cast=str).strip()
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def google_login(request):
-    print("inside....")
-    print("Full request headers:", request.headers)
-    print("Full request method:", request.method)
-    print("Full request path:", request.path)
-    print("All cookies:", request.COOKIES)
-    token = request.COOKIES.get('token')
-    if not token:
-        return Response({'error': 'No token provided'}, status=400)
-
+    id_token_str = request.data.get('id_token')
+    if not id_token_str:
+        return Response({'error': 'No token provided'}, status=status.HTTP_400_BAD_REQUEST)
+    
     try:
+        GOOGLE_CLIENT_ID = config('GOOGLE_CLIENT_ID')
+        idinfo = id_token.verify_oauth2_token(id_token_str, requests.Request(), GOOGLE_CLIENT_ID)
         
-        idinfo = id_token.verify_oauth2_token(token, requests.Request(), GOOGLE_CLIENT_ID)
+        # Validate audience
         if idinfo['aud'] != GOOGLE_CLIENT_ID:
-            return Response({'error': 'Invalid audience'}, status=400)
-
+            raise AuthenticationFailed('Invalid audience')
+        
+        # Process user data fron idinfo
         email = idinfo.get('email')
         name = idinfo.get('name')
-
+        User = get_user_model()
+        
         user, created = User.objects.get_or_create(
-            username=email, defaults={'email': email, 'first_name': name}
+            username=email, 
+            defaults={
+                'email': email, 
+                'first_name': name,
+                'is_active': True
+            }
         )
-
+        
         refresh = RefreshToken.for_user(user)
         access_token = str(refresh.access_token)
-        serialized_user = UserSerializer(user).data
-
-        response = JsonResponse({
-            'message': 'Login successful',
-            "user":serialized_user
-            })
+        refresh_token = str(refresh)
+        
+        response = Response({
+            'message': 'Login successful', 
+            'user': UserSerializer(user).data,
+            'access_token': access_token,
+            'refresh_token': refresh_token
+        })
+        
         response.set_cookie(
-            key='access_token',
-            value=access_token,
-            httponly=True,
-            secure=True,  
-            samesite='Lax', 
-        )
-        response.set_cookie(
-            key='refresh_token',
-            value=str(refresh),
-            httponly=True,
-            secure=True,
+            'access_token', 
+            access_token, 
+            httponly=True, 
+            secure=False,  # Set to True in production
             samesite='Lax',
+            max_age=3600  # 1 hour
         )
+        
+        response.set_cookie(
+            'refresh_token', 
+            refresh_token, 
+            httponly=True, 
+            secure=False,  # Set to True in production
+            samesite='Lax',
+            max_age=7 * 24 * 3600  # 7 days
+        )
+        
         return response
-
+    
     except ValueError as e:
-        return Response({'error': 'Invalid token or audience mismatch'}, status=400)
-
-
+        return Response({'error': f'Invalid token: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+    except AuthenticationFailed as e:
+        return Response({'error': str(e)}, status=status.HTTP_401_UNAUTHORIZED)  
 @csrf_exempt
 def forgot_password(request):
     if request.method == "POST":
@@ -403,22 +428,22 @@ def forgot_password(request):
 def reset_password(request):
     if request.method == "POST":
         data = json.loads(request.body)
-        print(data)
+        # print(data)
         token = data.get("token")
         password = data.get("password")
 
         try:
             user = User.objects.get(reset_token=token)
-            print(user.email)
+            # print(user.email)
             if user.is_reset_token_valid(token):
-                print("done")
-                print(f"Password before hashing: {user.password}")
+                # print("done")
+                # print(f"Password before hashing: {user.password}")
                 user.set_password(password)
                 # print(f"Password after hashing: {user.password}")
                 user.reset_token = None
                 user.reset_token_expiration = None
                 user.save()
-                print(f"In db: {password}")
+                # print(f"In db: {password}")
                 return JsonResponse({"message": "Password reset successful."})
             else:
                 return JsonResponse({"message": "Invalid or expired token."}, status=400)
@@ -427,10 +452,37 @@ def reset_password(request):
 
     return JsonResponse({"message": "Invalid request method."}, status=400)
 
+from rest_framework.permissions import IsAuthenticated,IsAdminUser,BasePermission
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def AuthCheck(request):
+    try:
+        # print("Received Cookies:", request.COOKIES)
+        # print("Received Headers:", request.headers)
+        # print("Authenticated User:", request.user)
+        print("inside of htis..........")
+        
+        return api_response(
+            status.HTTP_200_OK,
+            "Authenticated User",
+            {"isAuthenticated": True}
+        )
+    except Exception as e:
+        # print(f"Error in AuthCheck: {e}")
+        return api_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Authentication check failed",
+            {"error": str(e)}
+        )
+        
+class IsSuperUser(BasePermission):
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_superuser)
+    
+@api_view(['GET'])
+def AdminAuthCheck(request):
+    print("inside///////////////")
     try:
         print("Received Cookies:", request.COOKIES)
         print("Received Headers:", request.headers)
@@ -439,16 +491,15 @@ def AuthCheck(request):
         return api_response(
             status.HTTP_200_OK,
             "Authenticated User",
-            {"isAuthenticated": True}
+            {"isAuthorized": True}
         )
     except Exception as e:
-        print(f"Error in AuthCheck: {e}")
+        # print(f"Error in AuthCheck: {e}")
         return api_response(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            "Authentication check failed",
+            "Autherization check failed check failed",
             {"error": str(e)}
         )
-        
 
 
 @api_view(['GET'])
@@ -463,22 +514,23 @@ def get_user_profile(request):
 @permission_classes([IsAuthenticated])
 def update_user_profile(request):
     if request.content_type == "application/json":
-        print("Raw JSON body:", request.body)
+        # print("Raw JSON body:", request.body)
         try:
             data = json.loads(request.body)
-            print("Parsed JSON data:", data)
+            # print("Parsed JSON data:", data)
         except json.JSONDecodeError:
             return Response({"error": "Invalid JSON"}, status=400)
     elif request.content_type.startswith("multipart/form-data"):
-        print("Multipart data:", request.data)
-        print("Files:", request.FILES)
+        # print("Multipart data:", request.data)
+        # print("Files:", request.FILES)
+        pass
 
     serializer = UserSerializer(request.user, data=request.data, partial=True)
     if serializer.is_valid():
         serializer.save()
         return Response(serializer.data)
     else:
-        print("Serializer errors:", serializer.errors)
+        # print("Serializer errors:", serializer.errors)
         return Response(serializer.errors, status=400)
 
 
@@ -491,117 +543,6 @@ def get_tag_suggestions(request):
     return JsonResponse({'tags': []})
 
 
-# @api_view(['POST'])
-# @permission_classes([IsAuthenticated])
-# def blog_creation(request):
-#     user = request.user
-#     data = request.data.copy()
-    
-#     image = request.FILES.get('image')
-#     if image:
-#         if image.size > 5 * 1024 * 1024:  # 5MB
-#             return api_response(
-#                 status.HTTP_400_BAD_REQUEST,
-#                 "Image size should be less than 5MB",
-#             )
-        
-#         allowed_types = ['image/jpeg', 'image/png', 'image/jpg']
-#         if image.content_type not in allowed_types:
-#             return api_response(
-#                 status.HTTP_400_BAD_REQUEST,
-#                 f"Invalid image type, {image.content_type} is not allowed. (Allowed types are : JPEG, PNG, JPG)",
-#             )
-        
-#         data['image'] = image
-#     else:
-#         data.pop('image', None)
-
-#     try:
-#         tags = json.loads(data.get('tags', '[]'))
-#     except json.JSONDecodeError:
-#         return api_response(
-#             status.HTTP_400_BAD_REQUEST,
-#             "Invalid tags format",
-#         )
-
-#     serializer = BlogSerializer(data=data)
-    
-#     try:
-#         if serializer.is_valid():
-#             blog = serializer.save(user=user)
-            
-#             invalid_tags = []
-#             valid_tags = []
-#             for tag_name in tags:
-#                 try:
-#                     tag = Tag.objects.get(name=tag_name)
-#                     valid_tags.append(tag)
-#                 except Tag.DoesNotExist:
-#                     invalid_tags.append(tag_name)
-            
-#             if invalid_tags:
-#                 return api_response(
-#                     status.HTTP_406_NOT_ACCEPTABLE,
-#                     f"Invalid tags: {', '.join(invalid_tags)}",
-#                 )
-            
-#             for tag in valid_tags:
-#                 BlogTag.objects.create(blog=blog, tag=tag)
-            
-#             return api_response(status.HTTP_201_CREATED,"Blog created successfully",serializer.data,)
-#         else:
-#             return Response(status.HTTP_400_BAD_REQUEST,"Unexpected error",serializer.errors,)
-#     except Exception as e:
-#         return api_response(
-#             status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             str(e),
-#         )
-# @api_view(['GET'])
-# @permission_classes([IsAuthenticated])
-# def get_all_blogs(request):
-#     """To get all blogs with search and category filter"""
-#     search_query = request.query_params.get('search', None)
-#     category = request.query_params.get('category', None)
-#     page = request.query_params.get('page', 1)
-#     limit = request.query_params.get('limit', 5)
-    
-#     try:
-#         page = int(page)
-#         limit = int(limit)
-#     except ValueError:
-#         page = 1
-#         limit = 5
-    
-#     print(f"Search Query: {search_query}, Category: {category}")
-#     print(f"page: {page}, limit: {limit}")
-    
-#     blogs = Blog.objects.all()
-    
-#     if search_query:
-#         blogs = blogs.filter(
-#             Q(title__icontains=search_query) | Q(tags__name__icontains=search_query)
-#         ).distinct()
-    
-#     if category and category != 'All':
-#         blogs = blogs.filter(tags__name=category)
-    
-#     total_blogs = blogs.count()
-#     total_pages = math.ceil(total_blogs / limit)
-    
-#     start = (page - 1) * limit
-#     end = start + limit
-    
-#     paginated_blogs = blogs[start:end]
-    
-#     serializer = BlogSerializer(paginated_blogs, many=True)
-    
-#     return Response({
-#         'data': serializer.data,
-#         'total_pages': total_pages,
-#         'current_page': page,
-#         'total_blogs': total_blogs
-#     })
-
 from django.http import JsonResponse, Http404
 
 @api_view(['GET'])
@@ -611,15 +552,4 @@ def get_user_skills(request):
     user_skills = request.user.skills.all() 
     return Response({'skills': [skill.name for skill in user_skills]})
 
-# from rest_framework.generics import RetrieveAPIView
-# def blog_detail(request, slug):
-#     try:
-#         blog = Blog.objects.get(slug=slug)
-#         serializer = BlogSerializer(blog)
-#         return JsonResponse({
-#             'data': serializer.data,
-            
-#         })
-#     except Blog.DoesNotExist:
-#         raise Http404("Blog not found")
     
