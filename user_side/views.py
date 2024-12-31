@@ -61,7 +61,7 @@ User = get_user_model()
 class MyTokenObtainPairView(TokenObtainPairView):
     """Login the user via jwt"""
     
-    # serializer_class = MyTokenObtainPairSerializer  # later uncomment this for admin authentication
+    serializer_class = MyTokenObtainPairSerializer
     
     def post(self, request, *args, **kwargs):
         try:
@@ -103,7 +103,7 @@ class MyTokenObtainPairView(TokenObtainPairView):
             refresh_token = data.get("refresh")
 
             serialized_user = UserSerializer(user).data
-            # role = "admin" if user.is_staff or user.is_superuser else "user"  # later uncomment this for admin authentication
+            # role = "admin" if user.is_staff or user.is_superuser else "user"
 
             http_response = api_response(
                 status.HTTP_200_OK,
@@ -111,7 +111,7 @@ class MyTokenObtainPairView(TokenObtainPairView):
                 {"access_token": access_token,
                 "refresh_token": refresh_token,
                 "user":serialized_user,
-                # "role": role, # later uncomment this for admin authentication
+                # "role": role,
                 }
             )
 
@@ -452,6 +452,7 @@ def reset_password(request):
 
     return JsonResponse({"message": "Invalid request method."}, status=400)
 
+from rest_framework.permissions import IsAuthenticated,IsAdminUser,BasePermission
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -460,6 +461,7 @@ def AuthCheck(request):
         # print("Received Cookies:", request.COOKIES)
         # print("Received Headers:", request.headers)
         # print("Authenticated User:", request.user)
+        print("inside of htis..........")
         
         return api_response(
             status.HTTP_200_OK,
@@ -474,6 +476,30 @@ def AuthCheck(request):
             {"error": str(e)}
         )
         
+class IsSuperUser(BasePermission):
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_superuser)
+    
+@api_view(['GET'])
+def AdminAuthCheck(request):
+    print("inside///////////////")
+    try:
+        print("Received Cookies:", request.COOKIES)
+        print("Received Headers:", request.headers)
+        print("Authenticated User:", request.user)
+        
+        return api_response(
+            status.HTTP_200_OK,
+            "Authenticated User",
+            {"isAuthorized": True}
+        )
+    except Exception as e:
+        # print(f"Error in AuthCheck: {e}")
+        return api_response(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Autherization check failed check failed",
+            {"error": str(e)}
+        )
 
 
 @api_view(['GET'])

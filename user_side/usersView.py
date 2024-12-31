@@ -66,10 +66,82 @@ def list_users(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def user_details(requsest,pk):
+def user_details(request,pk):
     """
     To give details of a perticular user
     """
     user = User.objects.get(pk=pk)
+    follow_status = Follower.objects.filter(
+        follower=request.user, 
+        following=user
+    ).exists()
+            
     serializer = UserSerializer(user)
-    return Response(serializer.data)
+    data = serializer.data
+    data['isFollowing'] = follow_status
+    return Response(data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def report_user(request,pk):
+    """
+    To reporting another user by request.user
+    """
+    try:
+        reported_user = User.objects.get(pk=pk)
+    except User.DoesNotExist:
+        return Response({"error": "Reported user does not exist."}, status=status.HTTP_404_NOT_FOUND)
+    
+    note = request.data.get('note')
+
+    if not reported_user or not note:
+        return Response(
+            {"error": "Both 'reported_user_id' and 'note' are required."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+
+    # Ensure the user is not reporting themselves
+    if reported_user == request.user:
+        return Response({"error": "You cannot report yourself."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Create the report
+    report = Report.objects.create(
+        reported_user=reported_user,
+        reported_by=request.user,
+        note=note
+    )
+
+    # Serialize the report and return the response
+    serializer = ReportSerializer(report)
+    return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def follow_unfollow(request,pk):
+    """
+    To follow and unfollow user
+    """
+    try:
+        target_user = User.objects.get(pk=pk)
+        if target_user == request.user:
+            return Response({"error": "You cannot follow yourself."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check if already following
+        follow_relation, created = Follower.objects.get_or_create(
+            follower=request.user,
+            following=target_user
+        )
+
+        if not created:
+            # Already following, so unfollow
+            follow_relation.delete()
+            return Response({"message": "Unfollowed successfully."}, status=status.HTTP_200_OK)
+
+        return Response({"message": "Followed successfully."}, status=status.HTTP_201_CREATED)
+
+    except User.DoesNotExist:
+        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)

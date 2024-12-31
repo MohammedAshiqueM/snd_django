@@ -36,6 +36,8 @@ urlpatterns = [
     path('profile/update/', views.update_user_profile, name='profile-update'),
     path('tags/', views.get_tag_suggestions, name='tag-suggestions'),
     path('skills/', views.get_user_skills, name='skills'),
+    path('check/', views.AuthCheck, name='check'),
+    
     #blogView
     path('blog/create/', blogViews.blog_creation, name='blog-create'),
     path('blogs/', blogViews.get_all_blogs, name='blogs'), 
@@ -52,7 +54,10 @@ urlpatterns = [
     path('question/<int:pk>/vote/', questionView.question_vote, name='question-vote'),
     #usersView
     path('users/', usersView.list_users, name='users'),
-    path('users/details/<int:pk>/', usersView.user_details, name='user-details'),
+    path('users/<int:pk>/details/', usersView.user_details, name='user-details'),
+    path('users/<int:pk>/report/', usersView.report_user, name='user-report'),
+    path('users/<int:pk>/follow-unfollow/', usersView.follow_unfollow, name='follow-unfollow'),
+    
     
 ]
 

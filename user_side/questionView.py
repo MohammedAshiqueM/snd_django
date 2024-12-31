@@ -123,21 +123,46 @@ def get_all_question(request):
         'total_questions':total_questions
     })
     
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def question_detail(request, pk):
-    """
-    To get a question details using slug
-    """
+    # print("Starting question_detail")
+    # print("User authenticated:", request.user.is_authenticated)
+    
     try:
         question = Question.objects.get(pk=pk)
+        print(question.id)
+        
         with transaction.atomic():
             question.view_count = models.F('view_count') + 1
             question.save(update_fields=['view_count'])
         
-        question.refresh_from_db() 
+        question.refresh_from_db()
         serializer = QuestionSerializer(question)
-        return JsonResponse({
-            'data': serializer.data
-        })
+        data = serializer.data
+        
+        # print("Checking for vote")
+        # print("User:", request.user.id)
+        existing_vote = QuestionVote.objects.filter(
+            user=request.user,
+            question=question
+        ).values('vote').first()
+        # print("Vote query result:", existing_vote)
+        
+        user_vote = None
+        if existing_vote:
+            user_vote = 'upvote' if existing_vote['vote'] else 'downvote'
+        
+        is_following = Follower.objects.filter(
+                follower=request.user, 
+                following=question.user 
+            ).exists()
+            
+        data['user_vote'] = user_vote
+        data['is_following'] = is_following
+        
+        return JsonResponse({'data': data})
+        
     except Question.DoesNotExist:
         raise Http404("Question not found")
         

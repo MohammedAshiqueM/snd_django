@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'allauth.account',
     'allauth.socialaccount',
     'social_django',
+    'admin_side'
 ]
 
 MIDDLEWARE = [
@@ -256,7 +257,7 @@ REST_FRAMEWORK = {
         # 'rest_framework.permissions.IsAuthenticated',
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 16,  # Number of users per page
+    'PAGE_SIZE': 16,
 }
 
 SESSION_COOKIE_SAMESITE = 'None'  # Ensure this is set to 'None' for cross-origin cookies

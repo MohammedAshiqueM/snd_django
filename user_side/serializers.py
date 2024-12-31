@@ -6,14 +6,56 @@ from .models import (
     Question, QuestionTag, QuestionVote, Answer, SkillSharingRequest, RequestTag,
     Schedule, Rating, Report, TimeTransaction
 )
+from enum import Enum
+
+class UserRole(Enum):
+    ADMIN = "admin"
+    STAFF = "staff"
+    USER = "user"
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
-        token['is_staff'] = user.is_staff
-        token['is_superuser'] = user.is_superuser
+        
+        # Add custom claims
+        token['email'] = user.email
+        token['username'] = user.username
+        
+        # Define role based on user permissions
+        if user.is_superuser:
+            role = UserRole.ADMIN.value
+        elif user.is_staff:
+            role = UserRole.STAFF.value
+        else:
+            role = UserRole.USER.value
+            
+        token['role'] = role
         return token
+    
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        user = self.user
+        
+        # Define role using the same logic as above
+        if user.is_superuser:
+            role = UserRole.ADMIN.value
+        elif user.is_staff:
+            role = UserRole.STAFF.value
+        else:
+            role = UserRole.USER.value
+            
+        data['user'] = {
+            'id': user.id,
+            'email': user.email,
+            'username': user.username,
+            'is_staff': user.is_staff,
+            'is_superuser': user.is_superuser,
+            'role': role
+        }
+        
+        return data
+
 
 class TagSerializer(serializers.ModelSerializer):
     class Meta:
@@ -33,7 +75,7 @@ class UserSerializer(serializers.ModelSerializer):
     )
     followers = serializers.IntegerField(source='follower_count', read_only=True)
     following = serializers.IntegerField(source='following_count', read_only=True)
-    
+    role = serializers.SerializerMethodField()
     class Meta:
         model = User
         fields = [
@@ -41,7 +83,7 @@ class UserSerializer(serializers.ModelSerializer):
             'profile_image', 'banner_image', 'linkedin_url', 
             'github_url', 'about', 'rating', 'time_balance', 
             'skills', 'followers', 'following', 
-            'last_active'
+            'last_active','role'
         ]
         extra_kwargs = {
             'password': {'write_only': True},
@@ -68,6 +110,8 @@ class UserSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 
+    def get_role(self, obj):
+        return "admin" if obj.is_staff or obj.is_superuser else "user"
     
 class FollowerSerializer(serializers.ModelSerializer):
     follower = UserSerializer(read_only=True)
