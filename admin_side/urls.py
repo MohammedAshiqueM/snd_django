@@ -25,6 +25,8 @@ urlpatterns = [
     path('reports/', views.list_reports, name='report-list'),
     path('report/<int:pk>/details/', views.report_details, name='report-details'),
     path('user/<int:pk>/block-unblock/', views.block_unblock, name='block-unblock'),
+    path('tags/', views.tags_list, name='tags-list'),
+    path('tag/add/', views.add_tag, name='tag-add'),
     
     
 ]

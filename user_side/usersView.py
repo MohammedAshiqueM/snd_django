@@ -42,9 +42,8 @@ def list_users(request):
     """
     search_query = request.query_params.get('search', '').lower()
     category = request.query_params.get('category', None)
-    users = User.objects.all()
+    users = User.objects.filter(is_superuser=False)
 
-    # Apply search filter
     if search_query:
         users = users.filter(
             Q(username__icontains=search_query) | 
@@ -54,11 +53,9 @@ def list_users(request):
             Q(userskill__tag__name__icontains=search_query)
         ).distinct()
 
-    # Apply category filter
     if category and category != 'All':
         users = users.filter(userskill__tag__name=category).distinct()
 
-    # Paginate results
     paginator = UserPagination()
     result_page = paginator.paginate_queryset(users, request)
     serializer = UserSerializer(result_page, many=True)
@@ -101,20 +98,15 @@ def report_user(request,pk):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-
-
-    # Ensure the user is not reporting themselves
     if reported_user == request.user:
         return Response({"error": "You cannot report yourself."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Create the report
     report = Report.objects.create(
         reported_user=reported_user,
         reported_by=request.user,
         note=note
     )
 
-    # Serialize the report and return the response
     serializer = ReportSerializer(report)
     return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -130,14 +122,12 @@ def follow_unfollow(request,pk):
         if target_user == request.user:
             return Response({"error": "You cannot follow yourself."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check if already following
         follow_relation, created = Follower.objects.get_or_create(
             follower=request.user,
             following=target_user
         )
 
         if not created:
-            # Already following, so unfollow
             follow_relation.delete()
             return Response({"message": "Unfollowed successfully."}, status=status.HTTP_200_OK)
 

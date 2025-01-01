@@ -137,3 +137,35 @@ def block_unblock(request, pk):
         'message': f"User {'blocked' if user.is_blocked else 'unblocked'} successfully",
         'status': 'blocked' if user.is_blocked else 'active'
     })
+    
+    
+class UserPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 50
+     
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def tags_list(request):
+    """
+    To get all tags
+    """
+    search_query = request.query_params.get('search', None)
+    tags = Tag.objects.all()
+    
+    if search_query:
+        tags = tags.filter(name__icontains=search_query)
+    
+    paginator = UserPagination()
+    result_page = paginator.paginate_queryset(tags, request)
+    serializer = TagSerializer(result_page, many=True)
+    return paginator.get_paginated_response(serializer.data)
+
+@api_view(['POST'])
+@permission_classes([IsSuperUser])
+def add_tag(request):
+    serializer = TagSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

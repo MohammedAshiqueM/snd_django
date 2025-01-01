@@ -83,7 +83,7 @@ class UserSerializer(serializers.ModelSerializer):
             'profile_image', 'banner_image', 'linkedin_url', 
             'github_url', 'about', 'rating', 'time_balance', 
             'skills', 'followers', 'following', 
-            'last_active','role'
+            'last_active','role','is_blocked'
         ]
         extra_kwargs = {
             'password': {'write_only': True},
