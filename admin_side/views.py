@@ -151,11 +151,15 @@ def tags_list(request):
     To get all tags
     """
     search_query = request.query_params.get('search', None)
+    category = request.query_params.get('category', None)
     tags = Tag.objects.all()
     
     if search_query:
         tags = tags.filter(name__icontains=search_query)
-    
+        
+    if category and category.lower() != 'all':
+        tags = tags.filter(name__icontains=category)
+        
     paginator = UserPagination()
     result_page = paginator.paginate_queryset(tags, request)
     serializer = TagSerializer(result_page, many=True)

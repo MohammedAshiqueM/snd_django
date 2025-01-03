@@ -134,13 +134,14 @@ class BlogSerializer(serializers.ModelSerializer):
     vote_count = serializers.IntegerField(read_only=True)
     user_vote = serializers.SerializerMethodField()
     image = serializers.ImageField(required=False)
+    comment_count = serializers.SerializerMethodField()
     
     class Meta:
         model = Blog
         fields = [
             'id', 'user', 'title', 'slug', 'body_content', 
             'image', 'created_at', 'updated_at', 'tags', 
-            'is_published', 'view_count', 'vote_count' , 'user_vote'
+            'is_published', 'view_count', 'vote_count' , 'user_vote', 'comment_count'
         ]
     
     def get_tags(self, obj):
@@ -168,6 +169,8 @@ class BlogSerializer(serializers.ModelSerializer):
         print("No image found.")  # Debugging
         return None
 
+    def get_comment_count(self, obj):
+        return obj.blogcomment_set.count()
 
 class BlogVoteSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
@@ -195,17 +198,25 @@ class QuestionTagSerializer(serializers.ModelSerializer):
 class QuestionSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     tags = serializers.SerializerMethodField()
+    answered = serializers.SerializerMethodField()
+    answers_count = serializers.SerializerMethodField()
     
     class Meta:
         model = Question
         fields = [
             'id', 'user', 'title', 'body_content', 
-            'created_at', 'tags', 'view_count'
+            'created_at', 'tags', 'view_count', 'answered', 'answers_count', 'vote_count'
         ]
     
     def get_tags(self, obj):
         return QuestionTagSerializer(obj.tags.through.objects.filter(question=obj), many=True).data
 
+    def get_answered(self, obj):
+        return obj.answer_set.exists()
+    
+    def get_answers_count(self, obj):
+        return obj.answer_set.count()
+    
 class QuestionVoteSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     question = QuestionSerializer(read_only=True)
