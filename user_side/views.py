@@ -145,7 +145,6 @@ class MyTokenObtainPairView(TokenObtainPairView):
         
 class CustomTokenRefreshView(TokenRefreshView):
     def post(self, request, *args, **kwargs):
-        
         refresh_token = request.COOKIES.get('refresh_token')
         if not refresh_token:
             return Response({"error": "Refresh token not provided"}, status=status.HTTP_400_BAD_REQUEST)
@@ -155,19 +154,39 @@ class CustomTokenRefreshView(TokenRefreshView):
         try:
             original_response = super().post(request, *args, **kwargs)
             data = original_response.data
-            
-            token = RefreshToken(refresh_token)
-            user_id = token.payload.get('user_id') 
 
-            user = User.objects.get(id=user_id) 
+            # Check for the new access token
+            new_access_token = data.get("access")
+            if not new_access_token:
+                return Response({"error": "Access token not found"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            user_serializer = UserSerializer(user)
-            
-            data['user'] = user_serializer.data
+            # Set the new access token in cookies
+            http_response = Response(data, status=status.HTTP_200_OK)
+            http_response.set_cookie(
+                key='access_token',
+                value=new_access_token,
+                httponly=True,
+                secure=False,  # Set to True in production
+                samesite='Lax',
+                max_age=3600,
+            )
 
-            return Response(data, status=status.HTTP_200_OK)
+            # Optionally include the refresh token again (if needed)
+            if 'refresh' in data:
+                http_response.set_cookie(
+                    key='refresh_token',
+                    value=data['refresh'],
+                    httponly=True,
+                    secure=False,
+                    samesite='Lax',
+                    max_age=604800,
+                )
+
+            return http_response
+
         except (TokenError, InvalidToken) as e:
             return Response({"error": "Invalid refresh token"}, status=status.HTTP_401_UNAUTHORIZED)
+
 
 @api_view(['POST'])
 def logout_view(request):

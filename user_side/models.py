@@ -489,3 +489,34 @@ class TimeTransaction(models.Model):
 
     class Meta:
         db_table = 'time_transactions'
+              
+class Message(models.Model):
+    sender = models.ForeignKey(User, related_name='sent_messages', on_delete=models.CASCADE)
+    receiver = models.ForeignKey(User, related_name='received_messages', on_delete=models.CASCADE)
+    content = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+    is_read = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['timestamp']
+    
+    @classmethod
+    def mark_messages_as_read(cls, sender_id, receiver_id):
+        cls.objects.filter(
+            sender_id=sender_id,
+            receiver_id=receiver_id,
+            is_read=False
+        ).update(is_read=True)
+        
+    
+class OnlineUser(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    is_online = models.BooleanField(default=False)
+    last_seen = models.DateTimeField(auto_now=True)
+    
+class Notification(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    message = models.TextField()
+    type = models.CharField(max_length=50)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)

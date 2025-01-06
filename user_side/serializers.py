@@ -4,9 +4,10 @@ from rest_framework import serializers
 from .models import (
     User, Follower, Tag, UserSkill, Blog, BlogTag, BlogVote, BlogComment, 
     Question, QuestionTag, QuestionVote, Answer, SkillSharingRequest, RequestTag,
-    Schedule, Rating, Report, TimeTransaction
+    Schedule, Rating, Report, TimeTransaction, Message, OnlineUser
 )
 from enum import Enum
+from django.db.models import Q
 
 class UserRole(Enum):
     ADMIN = "admin"
@@ -76,6 +77,10 @@ class UserSerializer(serializers.ModelSerializer):
     followers = serializers.IntegerField(source='follower_count', read_only=True)
     following = serializers.IntegerField(source='following_count', read_only=True)
     role = serializers.SerializerMethodField()
+    last_message = serializers.CharField(read_only=True)
+    last_message_time = serializers.DateTimeField(read_only=True)
+    last_message_sender_id = serializers.IntegerField(read_only=True)
+    unread_count = serializers.IntegerField(read_only=True)
     class Meta:
         model = User
         fields = [
@@ -83,7 +88,9 @@ class UserSerializer(serializers.ModelSerializer):
             'profile_image', 'banner_image', 'linkedin_url', 
             'github_url', 'about', 'rating', 'time_balance', 
             'skills', 'followers', 'following', 
-            'last_active','role','is_blocked'
+            'last_active','role','is_blocked',
+            'last_message', 'last_message_time', 
+            'last_message_sender_id', 'unread_count'
         ]
         extra_kwargs = {
             'password': {'write_only': True},
@@ -113,6 +120,40 @@ class UserSerializer(serializers.ModelSerializer):
     def get_role(self, obj):
         return "admin" if obj.is_staff or obj.is_superuser else "user"
     
+    def get_message_data(self, obj):
+        # Get the most recent message for this user (either sent or received)
+        last_message = Message.objects.filter(
+            Q(sender=obj) | Q(receiver=obj)
+        ).order_by('-timestamp').first()
+
+        if last_message:
+            return {
+                'last_message': last_message.content,
+                'last_message_time': last_message.timestamp,
+                'last_message_sender_id': last_message.sender_id,
+            }
+        return {
+            'last_message': None,
+            'last_message_time': None,
+            'last_message_sender_id': None,
+        }
+
+    def get_unread_count(self, obj):
+        return Message.objects.filter(
+            receiver=obj,
+            is_read=False
+        ).count()
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        message_data = self.get_message_data(instance)
+        
+        representation['last_message'] = message_data['last_message']
+        representation['last_message_time'] = message_data['last_message_time']
+        representation['last_message_sender_id'] = message_data['last_message_sender_id']
+        representation['unread_count'] = self.get_unread_count(instance)
+        
+        return representation
 class FollowerSerializer(serializers.ModelSerializer):
     follower = UserSerializer(read_only=True)
     following = UserSerializer(read_only=True)

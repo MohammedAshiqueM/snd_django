@@ -7,7 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from .models import (
     Follower, Tag, UserSkill, Blog, BlogTag, BlogVote, BlogComment, 
     Question, QuestionTag, QuestionVote, Answer, SkillSharingRequest, RequestTag,
-    Schedule, Rating, Report, TimeTransaction
+    Schedule, Rating, Report, TimeTransaction, Message
 )
 from .serializers import (
     MyTokenObtainPairSerializer,TagSerializer,BlogSerializer,UserSerializer,
@@ -135,3 +135,149 @@ def follow_unfollow(request,pk):
 
     except User.DoesNotExist:
         return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+    
+from django.db.models import (
+    Q, F, Max, Count, OuterRef, Subquery, 
+    CharField, DateTimeField, IntegerField
+)
+from django.db.models.functions import Coalesce
+from rest_framework.response import Response
+from urllib.parse import parse_qs
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def all_users(request):
+    """
+    List users with chat history, sorted by last message time
+    """
+    try:
+        current_user = request.user
+        if not current_user.is_authenticated:
+            return Response({"error": "Authentication required"}, status=401)
+
+        # Handle both ASGI and REST framework requests
+        if hasattr(request, 'query_params'):
+            # REST framework request
+            search_query = request.query_params.get('search', '')
+            page = int(request.query_params.get('page', 1))
+        else:
+            # ASGI request
+            query_string = request.scope.get('query_string', b'').decode()
+            query_params = parse_qs(query_string)
+            search_query = query_params.get('search', [''])[0]
+            page = int(query_params.get('page', ['1'])[0])
+
+        # Get the latest message for each conversation
+        latest_messages = Message.objects.filter(
+            Q(sender=OuterRef('id'), receiver=current_user) |
+            Q(sender=current_user, receiver=OuterRef('id'))
+        ).order_by('-timestamp')
+
+        # Base query for users
+        users = User.objects.filter(
+            is_superuser=False
+        ).exclude(
+            id=current_user.id
+        ).annotate(
+            last_message=Subquery(
+                latest_messages.values('content')[:1],
+                output_field=CharField()
+            ),
+            last_message_time=Subquery(
+                latest_messages.values('timestamp')[:1],
+                output_field=DateTimeField()
+            ),
+            last_message_sender_id=Subquery(
+                latest_messages.values('sender_id')[:1],
+                output_field=IntegerField()
+            ),
+            last_message_receiver_id=Subquery(
+                latest_messages.values('receiver_id')[:1],
+                output_field=IntegerField()
+            ),
+            unread_count=Count(
+                'received_messages',
+                filter=Q(
+                    received_messages__is_read=False,
+                    received_messages__sender=current_user
+                )
+            )
+        )
+
+        # Apply search filter if provided
+        if search_query:
+            users = users.filter(
+                Q(username__icontains=search_query) |
+                Q(first_name__icontains=search_query) |
+                Q(last_name__icontains=search_query)
+            )
+
+        # Get users with messages first
+        users_with_messages = users.filter(
+            Q(sent_messages__receiver=current_user) |
+            Q(received_messages__sender=current_user)
+        ).distinct().order_by('-last_message_time')
+
+        # Then get users without messages
+        users_without_messages = users.exclude(
+            Q(sent_messages__receiver=current_user) |
+            Q(received_messages__sender=current_user)
+        ).order_by('username')
+
+        # Combine both querysets
+        all_users = list(users_with_messages) + list(users_without_messages)
+
+        # Implement pagination
+        page_size = 20
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        
+        paginated_users = all_users[start_idx:end_idx]
+        has_more = len(all_users) > end_idx
+
+        # Serialize the data
+        serializer = UserSerializer(paginated_users, many=True, context={'request': request})
+        
+        return Response({
+            "data": serializer.data,
+            "has_more": has_more
+        })
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+
+from django.http import JsonResponse
+from django.core.exceptions import PermissionDenied
+from . utils import validate_access_token  # Replace with your token validation logic
+# @csrf_exempt
+# @api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def websocket_handshake(request, user_id,target_id):
+    # Retrieve token from HttpOnly cookie
+    print(request.COOKIES)
+    token = request.COOKIES.get("access_token")
+    print("the token is ",token)
+    if not token:
+        return JsonResponse({"error": "Access token not found"}, status=401)
+
+    # Validate token
+    try:
+        validate_access_token(token)  # Ensure the token is valid (implement this function)
+    except PermissionDenied:
+        return JsonResponse({"error": "Invalid or expired token"}, status=401)
+
+    # Dynamically generate the WebSocket URL
+    websocket_url = f"ws://127.0.0.1:8000/ws/chat/{user_id}/{target_id}/?token={token}"
+    return JsonResponse({"websocket_url": websocket_url})
+
+# api.py
+@api_view(['POST'])
+def mark_messages_as_read(request, contact_id):
+    Message.objects.filter(
+        sender_id=contact_id,
+        receiver=request.user,
+        is_read=False
+    ).update(is_read=True)
+    return Response({'status': 'success'})

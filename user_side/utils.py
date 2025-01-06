@@ -43,3 +43,21 @@ def user_profile_image_path(instance, filename):
 
 def user_banner_image_path(instance, filename):
     return os.path.join('banner_images', str(instance.id), filename)
+
+import jwt
+from django.core.exceptions import PermissionDenied
+from django.conf import settings
+
+from rest_framework_simplejwt.tokens import AccessToken
+from jwt import ExpiredSignatureError, InvalidTokenError as TokenError
+
+def validate_access_token(token):
+    try:
+        decoded_token = AccessToken(token)
+        print("Token is valid:", decoded_token)
+        return decoded_token
+    except TokenError as e:
+        print("Token error:", str(e))
+        if isinstance(e, ExpiredSignatureError):
+            raise PermissionDenied("Token has expired. Please refresh.")
+        raise PermissionDenied("Token is invalid.")

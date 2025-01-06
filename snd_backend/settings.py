@@ -29,11 +29,26 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
+CHANNEL_LAYERS = {
+    "default": {
+        # 'BACKEND': 'channels.layers.InMemoryChannelLayer'
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("127.0.0.1", 6379)],
+        },
+    },
+}
+
+# CHANNEL_LAYERS['default']['CONFIG']['allowed_hosts'] = ['*']
 AUTH_USER_MODEL = 'user_side.User'
+
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 # Application definition
 
 INSTALLED_APPS = [
+    'channels',
+    'channels_redis',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -60,7 +75,11 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'allauth.account.middleware.AccountMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
+
 ]
+
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 ROOT_URLCONF = 'snd_backend.urls'
 
@@ -81,6 +100,8 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'snd_backend.wsgi.application'
+
+ASGI_APPLICATION = 'snd_backend.asgi.application'
 
 
 # Database
@@ -270,3 +291,28 @@ CSRF_COOKIE_HTTPONLY = True
 CSRF_COOKIE_SECURE = False
 CSRF_COOKIE_HTTP_ONLY = True
 SESSION_COOKIE_DOMAIN = None  # localhost not working (now both are in http://127.0.0.1: that's why it is working)
+
+
+# settings.py
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'level': 'DEBUG',
+        },
+    },
+    'loggers': {
+        'user_side.consumers': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+        'channels': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+    },
+}

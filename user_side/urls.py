@@ -54,10 +54,12 @@ urlpatterns = [
     path('question/<int:pk>/vote/', questionView.question_vote, name='question-vote'),
     #usersView
     path('users/', usersView.list_users, name='users'),
+    path('all-users/', usersView.all_users, name='all-users'),
     path('users/<int:pk>/details/', usersView.user_details, name='user-details'),
     path('users/<int:pk>/report/', usersView.report_user, name='user-report'),
     path('users/<int:pk>/follow-unfollow/', usersView.follow_unfollow, name='follow-unfollow'),
-    
+    path("ws-handshake/<int:user_id>/<int:target_id>/", usersView.websocket_handshake, name="websocket_handshake"),
+    path('mark/<int:contact_id>/', usersView.mark_messages_as_read, name='mark'),
     
 ]
 

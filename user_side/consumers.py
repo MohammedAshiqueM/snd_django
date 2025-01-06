@@ -1,0 +1,257 @@
+import json
+from channels.generic.websocket import AsyncWebsocketConsumer
+from channels.db import database_sync_to_async
+from django.core.serializers.json import DjangoJSONEncoder
+from datetime import datetime
+from .models import Message, OnlineUser
+from django.db.models import Q
+from django.contrib.auth import get_user_model
+import logging
+
+logger = logging.getLogger(__name__)
+
+def generate_room_id(user1_id, user2_id):
+    """Generate a unique room ID by sorting user IDs."""
+    sorted_ids = sorted([user1_id, user2_id])
+    return f"room_{sorted_ids[0]}_{sorted_ids[1]}"
+
+class ChatConsumer(AsyncWebsocketConsumer):
+    
+    active_rooms = {}
+    
+    @database_sync_to_async
+    def get_user(self, user_id):
+        User = get_user_model()
+        try:
+            return User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return None
+        
+    @database_sync_to_async
+    def save_message(self, sender_id, receiver_id, message):
+        message = Message.objects.create(
+            sender_id=sender_id,
+            receiver_id=receiver_id,
+            content=message
+        )
+        # Update the last message for both users
+        return message
+
+    @database_sync_to_async
+    def get_chat_history(self):
+        messages = Message.objects.filter(
+            (Q(sender_id=self.user_id) & Q(receiver_id=self.target_user_id)) |
+            (Q(sender_id=self.target_user_id) & Q(receiver_id=self.user_id))
+        ).order_by('timestamp')
+        history = []
+        for msg in messages:
+            history.append({
+                'content': msg.content,
+                'sender_id': msg.sender_id,
+                'timestamp': msg.timestamp.isoformat() 
+            })
+        return history
+    
+    @database_sync_to_async
+    def update_user_online_status(self, is_online):
+        OnlineUser.objects.update_or_create(
+            user_id=self.user_id,
+            defaults={'is_online': is_online, 'last_seen': datetime.now()}
+        )
+
+    @database_sync_to_async
+    def get_online_users(self):
+        return list(OnlineUser.objects.filter(is_online=True).values_list('user_id', flat=True))
+
+    async def broadcast_online_status(self):
+        online_users = await self.get_online_users()
+        await self.channel_layer.group_send(
+            'online_status',
+            {
+                'type': 'online_status_update',
+                'online_users': online_users
+            }
+        )
+
+    async def online_status_update(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'online_status',
+            'online_users': event['online_users']
+        }))
+        
+    async def connect(self):
+        try:
+            # Get authenticated user
+            self.user_id = int(self.scope['url_route']['kwargs']['current_user_id'])
+            self.user = await self.get_user(self.user_id)
+            
+            if not self.user:
+                await self.close()
+                return
+
+            # Rest of your existing connect code...
+            self.target_user_id = int(self.scope['url_route']['kwargs']['target_user_id'])
+            if not self.target_user_id:
+                raise ValueError("Target user ID is missing from the scope.")
+
+            # Generate room name and join room group
+            self.room_id = generate_room_id(self.user_id, self.target_user_id)
+            self.room_group_name = f"chat_{self.room_id}"
+            
+            # Track user joining room
+            if self.room_id not in ChatConsumer.active_rooms:
+                ChatConsumer.active_rooms[self.room_id] = set()
+            ChatConsumer.active_rooms[self.room_id].add(self.user_id)
+            
+            await self.channel_layer.group_add(
+                self.room_group_name,
+                self.channel_name
+            )
+            
+                
+            await self.channel_layer.group_add(
+                f"user_{self.user_id}",
+                self.channel_name
+            )
+                        
+            await self.channel_layer.group_add(
+                'online_status',
+                self.channel_name
+            )
+            
+            await self.update_user_online_status(True)
+            await self.broadcast_online_status()
+            
+            await self.accept()
+
+            # Send chat history
+            chat_history = await self.get_chat_history()
+            await self.send(text_data=json.dumps({
+                'type': 'chat_history',
+                'messages': chat_history
+            }))
+
+        except Exception as e:
+            logger.error(f"Error in connect: {e}")
+            await self.close()
+
+
+    async def disconnect(self, close_code):
+        try:
+            
+            # Remove user from active room
+            if hasattr(self, 'room_id'):
+                if self.room_id in ChatConsumer.active_rooms:
+                    ChatConsumer.active_rooms[self.room_id].discard(self.user_id)
+                    if not ChatConsumer.active_rooms[self.room_id]:
+                        del ChatConsumer.active_rooms[self.room_id]
+            
+            await self.update_user_online_status(False)
+            await self.broadcast_online_status()
+            
+            # Leave the room group
+            if hasattr(self, 'room_group_name'):
+                await self.channel_layer.group_discard(
+                    self.room_group_name,
+                    self.channel_name
+                )
+
+            await self.channel_layer.group_discard(
+                f"user_{self.user_id}",
+                self.channel_name
+            )
+
+
+            await self.channel_layer.group_discard(
+                'online_status',
+                self.channel_name
+            )
+            logger.info(f"Disconnected: {close_code}")
+        except Exception as e:
+            logger.error(f"Error during disconnection: {e}")
+            
+    @database_sync_to_async
+    def create_notification(self, receiver_id, message, sender_username):
+        try:
+            from .models import Notification
+            Notification.objects.create(
+                user_id=receiver_id,
+                message=f"New message from {sender_username}: {message[:50]}...",
+                type="message",
+                is_read=False
+            )
+        except Exception as e:
+            logger.error(f"Failed to create notification: {e}")
+
+
+    async def receive(self, text_data):
+        try:
+            data = json.loads(text_data)
+            print("the scope in receive...", self.scope)
+            
+            print(data)
+            sender_id = int(self.scope['url_route']['kwargs']['current_user_id'])
+            receiver_id = int(self.scope['url_route']['kwargs']['target_user_id'])
+            message = data['message']
+            username = data['username']
+            
+            # Check if receiver is in the room
+            receiver_in_room = (
+                self.room_id in ChatConsumer.active_rooms and 
+                receiver_id in ChatConsumer.active_rooms[self.room_id]
+            )
+            
+            await self.save_message(sender_id, receiver_id, message)
+            current_time = datetime.now().isoformat()
+
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'chat_message',
+                    'message': message,
+                    'username': username,
+                    'sender_id': sender_id,
+                    'receiver_id': receiver_id,
+                    'timestamp': current_time
+                }
+            )
+            
+            # Create notification if receiver is not in room
+            if not receiver_in_room:
+                await self.create_notification(receiver_id, message, username)
+                # Send real-time notification if user is online but in a different chat
+                await self.channel_layer.group_send(
+                    f"user_{receiver_id}",
+                    {
+                        'type': 'notification_message',
+                        'message': message,
+                        'sender': username,
+                        'sender_id': sender_id
+                    }
+                )
+
+        except Exception as e:
+            logger.error(f"Error in receive: {e}")
+            
+    async def notification_message(self, event):
+        """Handle sending notifications to users"""
+        logger.info(f"Notification event: {event}")
+        await self.send(text_data=json.dumps({
+            'type': 'notification',
+            'message': event['message'],
+            'sender': event['sender'],
+            'sender_id': event['sender_id']
+        }))
+
+    async def chat_message(self, event):
+        try:
+            # Send the message to WebSocket
+            await self.send(text_data=json.dumps({
+                'message': event['message'],
+                'username': event['username'],
+                'sender_id': event['sender_id'],
+                'receiver_id': event['receiver_id'],
+                'timestamp': event['timestamp']
+            }))
+        except Exception as e:
+            logger.error(f"Error in chat_message: {e}")
