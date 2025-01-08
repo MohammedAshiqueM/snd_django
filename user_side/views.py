@@ -52,7 +52,7 @@ from django.db.models import Q
 import math
 import time
 from django.contrib.auth import logout as auth_logout
-
+from django.contrib.auth.signals import user_logged_in
 
 User = get_user_model()
 
@@ -99,6 +99,12 @@ class MyTokenObtainPairView(TokenObtainPairView):
             response = super().post(request, *args, **kwargs)
             data = response.data
 
+            user_logged_in.send(
+            sender=user.__class__,
+            request=request,
+            user=user
+            )
+            
             access_token = data.get("access")
             refresh_token = data.get("refresh")
 

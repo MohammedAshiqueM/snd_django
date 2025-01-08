@@ -3,10 +3,16 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.core.serializers.json import DjangoJSONEncoder
 from datetime import datetime
-from .models import Message, OnlineUser
+from .models import Message, OnlineUser, Notification
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.db.models import Q
 from django.contrib.auth import get_user_model
 import logging
+from django.db.models import (
+    Q, F, Max, Count, OuterRef, Subquery, 
+    CharField, DateTimeField, IntegerField
+)
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +21,70 @@ def generate_room_id(user1_id, user2_id):
     sorted_ids = sorted([user1_id, user2_id])
     return f"room_{sorted_ids[0]}_{sorted_ids[1]}"
 
+class NotificationService:
+    @staticmethod
+    @database_sync_to_async
+    def create_notification(receiver_id, sender_username, message, notification_type="message"):
+        notification = Notification.objects.create(
+            user_id=receiver_id,
+            message=f"New message from {sender_username}: {message[:50]}...",
+            type=notification_type,
+            is_read=False
+        )
+        return notification
+
+    @staticmethod
+    @database_sync_to_async
+    def get_user_channel_name(user_id):
+        try:
+            online_user = OnlineUser.objects.get(user_id=user_id, is_online=True)
+            return f"user_{user_id}" if online_user else None
+        except OnlineUser.DoesNotExist:
+            return None
+        
+        
 class ChatConsumer(AsyncWebsocketConsumer):
     
+    @database_sync_to_async
+    def increment_connection_count(self):
+        """Increment the connection count for the user"""
+        try:
+            online_user, _ = OnlineUser.objects.get_or_create(
+                user_id=self.user_id,
+                defaults={'is_online': True, 'last_seen': datetime.now()}
+            )
+            online_user.connection_count = F('connection_count') + 1
+            online_user.is_online = True
+            online_user.save()
+            online_user.refresh_from_db()
+            return online_user.connection_count
+        except Exception as e:
+            logger.error(f"Error incrementing connection count: {e}")
+            return 1
+
+    @database_sync_to_async
+    def decrement_connection_count(self):
+        """Decrement the connection count and update online status"""
+        try:
+            online_user = OnlineUser.objects.get(user_id=self.user_id)
+            online_user.connection_count = F('connection_count') - 1
+            online_user.save()
+            online_user.refresh_from_db()
+            
+            # If this was the last connection, mark as offline
+            if online_user.connection_count <= 0:
+                online_user.is_online = False
+                online_user.last_seen = datetime.now()
+                online_user.connection_count = 0
+                online_user.save()
+            return online_user.connection_count
+        except OnlineUser.DoesNotExist:
+            logger.error(f"OnlineUser not found for user_id: {self.user_id}")
+            return 0
+        except Exception as e:
+            logger.error(f"Error decrementing connection count: {e}")
+            return 0
+        
     active_rooms = {}
     
     @database_sync_to_async
@@ -61,7 +129,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def get_online_users(self):
-        return list(OnlineUser.objects.filter(is_online=True).values_list('user_id', flat=True))
+        """Get all online users with positive connection counts"""
+        return list(OnlineUser.objects.filter(
+            is_online=True, 
+            connection_count__gt=0
+        ).values_list('user_id', flat=True))
 
     async def broadcast_online_status(self):
         online_users = await self.get_online_users()
@@ -89,6 +161,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 await self.close()
                 return
 
+            await self.channel_layer.group_add(
+                'online_status',
+                self.channel_name
+            )
+            
+            # Increment connection count instead of just setting online status
+            await self.increment_connection_count()
+            await self.accept()
+            await self.broadcast_online_status()
+            
             # Rest of your existing connect code...
             self.target_user_id = int(self.scope['url_route']['kwargs']['target_user_id'])
             if not self.target_user_id:
@@ -114,15 +196,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 self.channel_name
             )
                         
-            await self.channel_layer.group_add(
-                'online_status',
-                self.channel_name
-            )
-            
             await self.update_user_online_status(True)
-            await self.broadcast_online_status()
+            # await self.broadcast_online_status()
             
-            await self.accept()
+            # await self.accept()
 
             # Send chat history
             chat_history = await self.get_chat_history()
@@ -138,7 +215,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def disconnect(self, close_code):
         try:
-            
+            # Decrement connection count instead of just setting offline status
+            remaining_connections = await self.decrement_connection_count()
             # Remove user from active room
             if hasattr(self, 'room_id'):
                 if self.room_id in ChatConsumer.active_rooms:
@@ -147,7 +225,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
                         del ChatConsumer.active_rooms[self.room_id]
             
             await self.update_user_online_status(False)
-            await self.broadcast_online_status()
+            # Only broadcast status if this was the last connection
+            if remaining_connections <= 0:
+                await self.broadcast_online_status()
             
             # Leave the room group
             if hasattr(self, 'room_group_name'):
@@ -195,6 +275,25 @@ class ChatConsumer(AsyncWebsocketConsumer):
             message = data['message']
             username = data['username']
             
+            notification = await NotificationService.create_notification(
+                receiver_id, 
+                username, 
+                message
+            )
+            
+            channel_name = await NotificationService.get_user_channel_name(receiver_id)
+            if channel_name:
+                await self.channel_layer.group_send(
+                    channel_name,
+                    {
+                        'type': 'notification_message',
+                        'message': message,
+                        'sender': username,
+                        'sender_id': sender_id,
+                        'notification_id': notification.id
+                    }
+                )
+                
             # Check if receiver is in the room
             receiver_in_room = (
                 self.room_id in ChatConsumer.active_rooms and 
@@ -255,3 +354,5 @@ class ChatConsumer(AsyncWebsocketConsumer):
             }))
         except Exception as e:
             logger.error(f"Error in chat_message: {e}")
+            
+            

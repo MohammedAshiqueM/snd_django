@@ -4,7 +4,7 @@ from rest_framework import serializers
 from .models import (
     User, Follower, Tag, UserSkill, Blog, BlogTag, BlogVote, BlogComment, 
     Question, QuestionTag, QuestionVote, Answer, SkillSharingRequest, RequestTag,
-    Schedule, Rating, Report, TimeTransaction, Message, OnlineUser
+    Schedule, Rating, Report, TimeTransaction, Message, OnlineUser, Notification
 )
 from enum import Enum
 from django.db.models import Q
@@ -333,3 +333,20 @@ class TimeTransactionSerializer(serializers.ModelSerializer):
             'id', 'user', 'transaction_type', 
             'amount', 'related_schedule', 'created_at'
         ]
+        
+class NotificationSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+    created_at_formatted = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Notification
+        fields = ['id', 'user', 'message', 'type', 'is_read', 'created_at', 'created_at_formatted']
+        read_only_fields = ['created_at']
+
+    def get_created_at_formatted(self, obj):
+        return obj.created_at.strftime("%Y-%m-%d %H:%M:%S")
+
+    def update(self, instance, validated_data):
+        instance.is_read = validated_data.get('is_read', instance.is_read)
+        instance.save()
+        return instance

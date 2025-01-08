@@ -7,14 +7,14 @@ from django.views.decorators.csrf import csrf_exempt
 from .models import (
     Follower, Tag, UserSkill, Blog, BlogTag, BlogVote, BlogComment, 
     Question, QuestionTag, QuestionVote, Answer, SkillSharingRequest, RequestTag,
-    Schedule, Rating, Report, TimeTransaction, Message
+    Schedule, Rating, Report, TimeTransaction, Message, OnlineUser, Notification
 )
 from .serializers import (
     MyTokenObtainPairSerializer,TagSerializer,BlogSerializer,UserSerializer,
     RatingSerializer,ReportSerializer,BlogTagSerializer,BlogVoteSerializer,
     FollowerSerializer,QuestionSerializer,ScheduleSerializer,UserSkillSerializer,
     RequestTagSerializer,BlogCommentSerializer,QuestionTagSerializer,QuestionVoteSerializer,
-    AnswerSerializer,SkillSharingRequest,TimeTransactionSerializer,SkillSharingRequestSerializer
+    AnswerSerializer,SkillSharingRequest,TimeTransactionSerializer,SkillSharingRequestSerializer,NotificationSerializer
     )
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -272,7 +272,7 @@ def websocket_handshake(request, user_id,target_id):
     websocket_url = f"ws://127.0.0.1:8000/ws/chat/{user_id}/{target_id}/?token={token}"
     return JsonResponse({"websocket_url": websocket_url})
 
-# api.py
+
 @api_view(['POST'])
 def mark_messages_as_read(request, contact_id):
     Message.objects.filter(
@@ -280,4 +280,54 @@ def mark_messages_as_read(request, contact_id):
         receiver=request.user,
         is_read=False
     ).update(is_read=True)
+    return Response({'status': 'success'})
+
+
+@api_view(['GET'])
+def get_online_status(request):
+    online_users = OnlineUser.objects.filter(
+        is_online=True, 
+        connection_count__gt=0
+    ).values_list('user_id', flat=True)
+    return Response({'online_users': list(online_users)})
+
+
+from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_notifications(request):
+    """
+    List all notifications for the authenticated user.
+    """
+    notifications = Notification.objects.filter(user=request.user).order_by('-created_at')
+    serializer = NotificationSerializer(notifications, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def unread_notification_count(request):
+    """
+    Get the count of unread notifications for the authenticated user.
+    """
+    count = Notification.objects.filter(user=request.user, is_read=False).count()
+    return Response({'count': count})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mark_notification_read(request, pk):
+    """
+    Mark a specific notification as read.
+    """
+    try:
+        notification = Notification.objects.get(pk=pk, user=request.user)
+    except Notification.DoesNotExist:
+        return Response({'error': 'Notification not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    notification.is_read = True
+    notification.save()
     return Response({'status': 'success'})

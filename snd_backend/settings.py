@@ -55,14 +55,15 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'user_side',
+    'user_side.apps.UserSideConfig',
+    # 'user_side',
     'corsheaders',
     'django.contrib.sites',
     'allauth',
     'allauth.account',
     'allauth.socialaccount',
     'social_django',
-    'admin_side'
+    'admin_side',
 ]
 
 MIDDLEWARE = [
