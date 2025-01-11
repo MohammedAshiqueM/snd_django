@@ -520,6 +520,7 @@ class OnlineUser(models.Model):
     
 class Notification(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_notifications', null=True)
     message = models.TextField()
     type = models.CharField(max_length=50)
     is_read = models.BooleanField(default=False)

@@ -59,6 +59,8 @@ urlpatterns = [
     path('users/<int:pk>/report/', usersView.report_user, name='user-report'),
     path('users/<int:pk>/follow-unfollow/', usersView.follow_unfollow, name='follow-unfollow'),
     path("ws-handshake/<int:user_id>/<int:target_id>/", usersView.websocket_handshake, name="websocket_handshake"),
+    path("notification-handshake/<int:user_id>/", usersView.notification_handshake, name="notification_handshake"),
+    
     path('mark/<int:contact_id>/', usersView.mark_messages_as_read, name='mark'),
     path('onlilne-status/', usersView.get_online_status, name='online-status'),
     path('notifications/', usersView.list_notifications, name='list_notifications'),

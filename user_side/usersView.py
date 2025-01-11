@@ -256,20 +256,39 @@ from . utils import validate_access_token  # Replace with your token validation 
 @permission_classes([IsAuthenticated])
 def websocket_handshake(request, user_id,target_id):
     # Retrieve token from HttpOnly cookie
-    print(request.COOKIES)
+    # print(request.COOKIES)
     token = request.COOKIES.get("access_token")
-    print("the token is ",token)
+    # print("the token is ",token)
     if not token:
         return JsonResponse({"error": "Access token not found"}, status=401)
 
     # Validate token
     try:
-        validate_access_token(token)  # Ensure the token is valid (implement this function)
+        validate_access_token(token) 
     except PermissionDenied:
         return JsonResponse({"error": "Invalid or expired token"}, status=401)
 
     # Dynamically generate the WebSocket URL
     websocket_url = f"ws://127.0.0.1:8000/ws/chat/{user_id}/{target_id}/?token={token}"
+    return JsonResponse({"websocket_url": websocket_url})
+
+@permission_classes([IsAuthenticated])
+def notification_handshake(request, user_id):
+    # Retrieve token from HttpOnly cookie
+    # print(request.COOKIES)
+    token = request.COOKIES.get("access_token")
+    # print("the token is ",token)
+    if not token:
+        return JsonResponse({"error": "Access token not found"}, status=401)
+
+    # Validate token
+    try:
+        validate_access_token(token)
+    except PermissionDenied:
+        return JsonResponse({"error": "Invalid or expired token"}, status=401)
+
+    # Dynamically generate the WebSocket URL
+    websocket_url = f"ws://127.0.0.1:8000/ws/notifications/{user_id}/?token={token}"
     return JsonResponse({"websocket_url": websocket_url})
 
 
