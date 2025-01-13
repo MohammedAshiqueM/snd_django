@@ -47,6 +47,7 @@ class NotificationService:
         
         
 class ChatConsumer(AsyncWebsocketConsumer):
+    active_rooms = {}
     
     @database_sync_to_async
     def increment_connection_count(self):
@@ -88,7 +89,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
             logger.error(f"Error decrementing connection count: {e}")
             return 0
         
-    active_rooms = {}
     
     @database_sync_to_async
     def get_user(self, user_id):
@@ -138,6 +138,22 @@ class ChatConsumer(AsyncWebsocketConsumer):
             connection_count__gt=0
         ).values_list('user_id', flat=True))
 
+    @database_sync_to_async
+    def mark_notifications_read_for_sender(self, sender_id):
+        """Mark all notifications from a specific sender as read"""
+        with transaction.atomic():
+            return (
+                Notification.objects.select_for_update()
+                .filter(
+                    user_id=self.user_id,
+                    sender_id=sender_id,
+                    is_read=False
+                )
+                .update(
+                    is_read=True,
+                )
+            )
+            
     async def broadcast_online_status(self):
         online_users = await self.get_online_users()
         await self.channel_layer.group_send(
@@ -182,7 +198,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             # Generate room name and join room group
             self.room_id = generate_room_id(self.user_id, self.target_user_id)
             self.room_group_name = f"chat_{self.room_id}"
-            
+            print("room openned............",self.room_id)
             # Track user joining room
             if self.room_id not in ChatConsumer.active_rooms:
                 ChatConsumer.active_rooms[self.room_id] = set()
@@ -203,6 +219,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             # await self.broadcast_online_status()
             
             # await self.accept()
+            await self.mark_notifications_read_for_sender(self.target_user_id)
 
             # Send chat history
             chat_history = await self.get_chat_history()
