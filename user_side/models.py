@@ -15,6 +15,7 @@ from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.core.exceptions import ValidationError
 import uuid
 from django.utils.timezone import now, timedelta
+from django.db import transaction
 
 def validate_image_size(image):
     """Validate that image file size is under 5MB"""
@@ -104,6 +105,14 @@ class User(AbstractUser):
         default=0,
         validators=[MinValueValidator(0)],
         help_text="User's remaining time balance in minutes"
+    )
+    available_time = models.PositiveIntegerField(
+        default=0,
+        help_text="User's available time balance in minutes"
+    )
+    held_time = models.PositiveIntegerField(
+        default=0,
+        help_text="User's time currently on hold for pending requests"
     )
     followers = models.ManyToManyField(
         'self',
@@ -237,6 +246,41 @@ class User(AbstractUser):
     def following_count(self):
         """Get the number of users being followed"""
         return self.following.count()
+    @property
+    def total_time(self):
+        """Total time balance including held time"""
+        return self.available_time + self.held_time
+
+    def has_sufficient_time(self, minutes):
+        """Check if user has enough available time"""
+        return self.available_time >= minutes
+
+    def hold_time(self, minutes):
+        """Put time on hold for a request"""
+        if not self.has_sufficient_time(minutes):
+            raise ValidationError(
+                f"Insufficient time balance. Need {minutes} minutes but only have {self.available_time} available."
+            )
+        self.available_time -= minutes
+        self.held_time += minutes
+        self.save()
+
+    def release_held_time(self, minutes):
+        """Release held time back to available"""
+        self.held_time -= minutes
+        self.available_time += minutes
+        self.save()
+
+    def transfer_time(self, recipient, minutes):
+        """Transfer time to another user"""
+        if self.held_time < minutes:
+            raise ValidationError("Insufficient held time for transfer")
+        
+        self.held_time -= minutes
+        recipient.available_time += minutes
+        
+        self.save()
+        recipient.save()
 class Follower(models.Model):
     follower = models.ForeignKey(User, on_delete=models.CASCADE, related_name='user_followers')
     following = models.ForeignKey(User, on_delete=models.CASCADE, related_name='user_following')
@@ -415,17 +459,78 @@ class Answer(models.Model):
 
     class Meta:
         db_table = 'answer'
-        
+ 
+def default_preferred_time():
+    return timezone.now() + timedelta(days=1)       
 class SkillSharingRequest(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    title = models.CharField(max_length=50)
+    class Status(models.TextChoices):
+        DRAFT = 'DR', 'Draft'
+        PENDING = 'PE', 'Pending'  # Time held, looking for teacher
+        SCHEDULED = 'SC', 'Scheduled'  # Has accepted schedule
+        COMPLETED = 'CO', 'Completed'
+        CANCELLED = 'CA', 'Cancelled'
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='learning_requests'
+    )
+    title = models.CharField(max_length=100)
     body_content = models.TextField()
-    requested_time = models.DateTimeField()
-    created_at = models.DateTimeField(default=timezone.now)
+    duration_minutes = models.PositiveIntegerField(
+        default=5,
+        help_text="Requested session duration in minutes"
+    )
+    preferred_time = models.DateTimeField(
+        default=default_preferred_time,
+        help_text="Preferred time for the session"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    status = models.CharField(
+        max_length=2,
+        choices=Status.choices,
+        default=Status.DRAFT
+    )
     tags = models.ManyToManyField(Tag, through='RequestTag')
 
     class Meta:
         db_table = 'skill_sharing_requests'
+        indexes = [
+            models.Index(fields=['status'], name='request_status_idx'),
+            models.Index(fields=['preferred_time'], name='request_time_idx'),
+            models.Index(fields=['created_at'], name='request_created_idx'),
+        ]
+
+    def clean(self):
+        if self.preferred_time <= timezone.now():
+            raise ValidationError("Preferred time must be in the future")
+        
+        if self.duration_minutes <= 0:
+            raise ValidationError("Duration must be greater than 0 minutes")
+
+    @transaction.atomic
+    def publish(self):
+        """Publish request and hold time"""
+        if self.status != self.Status.DRAFT:
+            raise ValidationError("Only draft requests can be published")
+            
+        # Check and hold time
+        self.user.hold_time(self.duration_minutes)
+        self.status = self.Status.PENDING
+        self.save()
+
+    @transaction.atomic
+    def cancel(self):
+        """Cancel request and release held time"""
+        if self.status not in [self.Status.DRAFT, self.Status.PENDING]:
+            raise ValidationError("Only draft or pending requests can be cancelled")
+            
+        if self.status == self.Status.PENDING:
+            self.user.release_held_time(self.duration_minutes)
+            
+        self.status = self.Status.CANCELLED
+        self.save()
 
 class RequestTag(models.Model):
     request = models.ForeignKey(SkillSharingRequest, on_delete=models.CASCADE)
@@ -437,7 +542,7 @@ class RequestTag(models.Model):
 
 class Schedule(models.Model):
     class Status(models.TextChoices):
-        PENDING = 'PE', 'Pending'
+        PROPOSED = 'PR', 'Proposed'
         ACCEPTED = 'AC', 'Accepted'
         REJECTED = 'RE', 'Rejected'
         COMPLETED = 'CO', 'Completed'
@@ -446,14 +551,68 @@ class Schedule(models.Model):
     request = models.ForeignKey(SkillSharingRequest, on_delete=models.CASCADE)
     teacher = models.ForeignKey(User, on_delete=models.CASCADE, related_name='teaching_schedules')
     student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='learning_schedules')
-    scheduled_at = models.DateTimeField()
+    scheduled_time = models.DateTimeField()
     timezone = models.CharField(max_length=50)
-    status = models.CharField(max_length=2, choices=Status.choices, default=Status.PENDING)
+    status = models.CharField(max_length=2, choices=Status.choices, default=Status.PROPOSED)
     note = models.TextField(blank=True)
 
     class Meta:
         db_table = 'schedules'
+        unique_together = ('request', 'teacher')
+        
+    def clean(self):
+        if self.scheduled_time <= timezone.now():
+            raise ValidationError("Schedule time must be in the future")
+            
+        if self.teacher == self.request.user:
+            raise ValidationError("Teacher cannot be the same as student")
 
+    @transaction.atomic
+    def accept(self):
+        """Accept the proposed schedule"""
+        if self.status != self.Status.PROPOSED:
+            raise ValidationError("Only proposed schedules can be accepted")
+            
+        # Reject other proposals
+        Schedule.objects.filter(
+            request=self.request,
+            status=self.Status.PROPOSED
+        ).exclude(id=self.id).update(status=self.Status.REJECTED)
+        
+        self.status = self.Status.ACCEPTED
+        self.request.status = SkillSharingRequest.Status.SCHEDULED
+        
+        self.save()
+        self.request.save()
+
+    @transaction.atomic
+    def complete(self):
+        """Mark schedule as completed and transfer time"""
+        if self.status != self.Status.ACCEPTED:
+            raise ValidationError("Only accepted schedules can be completed")
+            
+        # Transfer held time from student to teacher
+        self.request.user.transfer_time(
+            self.teacher,
+            self.request.duration_minutes
+        )
+        
+        self.status = self.Status.COMPLETED
+        self.completed_at = timezone.now()
+        self.request.status = SkillSharingRequest.Status.COMPLETED
+        
+        self.save()
+        self.request.save()
+        
+        # Create transaction records
+        TimeTransaction.objects.create(
+            from_user=self.request.user,
+            to_user=self.teacher,
+            amount=self.request.duration_minutes,
+            schedule=self,
+            request=self.request
+        )
+        
 class Rating(models.Model):
     teacher = models.ForeignKey(User, on_delete=models.CASCADE, related_name='teacher_ratings')
     student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='student_ratings')
@@ -481,10 +640,25 @@ class TimeTransaction(models.Model):
         CREDIT = 'CR', 'Credit'
         DEBIT = 'DE', 'Debit'
 
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    transaction_type = models.CharField(max_length=2, choices=TransactionType.choices)
-    amount = models.IntegerField()
-    related_schedule = models.ForeignKey(Schedule, on_delete=models.SET_NULL, null=True)
+    from_user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='time_sent',
+        default=1
+    )
+    to_user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='time_received',
+        default=2
+    )
+    amount = models.PositiveIntegerField()
+    schedule = models.ForeignKey(
+        Schedule,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:

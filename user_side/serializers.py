@@ -8,6 +8,7 @@ from .models import (
 )
 from enum import Enum
 from django.db.models import Q
+from django.utils import timezone
 
 class UserRole(Enum):
     ADMIN = "admin"
@@ -277,17 +278,30 @@ class AnswerSerializer(serializers.ModelSerializer):
 class SkillSharingRequestSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
     tags = serializers.SerializerMethodField()
+    preferred_time = serializers.DateTimeField(required=True)
+    duration_minutes = serializers.IntegerField(required=True)
+    # status = serializers.CharField(read_only=True)
     
     class Meta:
         model = SkillSharingRequest
         fields = [
             'id', 'user', 'title', 'body_content', 
-            'requested_time', 'created_at', 'tags'
+            'duration_minutes', 'preferred_time', 'created_at',
+            'updated_at', 'status', 'tags'
         ]
-    
     def get_tags(self, obj):
         return RequestTagSerializer(obj.tags.through.objects.filter(request=obj), many=True).data
 
+    def validate_preferred_time(self, value):
+        if value <= timezone.now():
+            raise serializers.ValidationError("Preferred time must be in the future")
+        return value
+
+    def validate_duration_minutes(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Duration must be greater than 0 minutes")
+        return value
+    
 class RequestTagSerializer(serializers.ModelSerializer):
     tag = TagSerializer(read_only=True)
     
@@ -299,13 +313,19 @@ class ScheduleSerializer(serializers.ModelSerializer):
     request = SkillSharingRequestSerializer(read_only=True)
     teacher = UserSerializer(read_only=True)
     student = UserSerializer(read_only=True)
+    status = serializers.CharField(read_only=True)
     
     class Meta:
         model = Schedule
         fields = [
             'id', 'request', 'teacher', 'student', 
-            'scheduled_at', 'timezone', 'status', 'note'
+            'scheduled_time', 'timezone', 'status', 'note'
         ]
+
+    def validate_scheduled_time(self, value):
+        if value <= timezone.now():
+            raise serializers.ValidationError("Schedule time must be in the future")
+        return value
 
 class RatingSerializer(serializers.ModelSerializer):
     teacher = UserSerializer(read_only=True)
@@ -324,14 +344,16 @@ class ReportSerializer(serializers.ModelSerializer):
         fields = ['reported_user', 'reported_by', 'note', 'created_at']
 
 class TimeTransactionSerializer(serializers.ModelSerializer):
-    user = UserSerializer(read_only=True)
-    related_schedule = ScheduleSerializer(read_only=True)
+    from_user = UserSerializer(read_only=True)
+    to_user = UserSerializer(read_only=True)
+    schedule = ScheduleSerializer(read_only=True)
+    request = SkillSharingRequestSerializer(read_only=True)
     
     class Meta:
         model = TimeTransaction
         fields = [
-            'id', 'user', 'transaction_type', 
-            'amount', 'related_schedule', 'created_at'
+            'id', 'from_user', 'to_user', 'amount',
+            'schedule', 'request', 'created_at'
         ]
         
 class NotificationSerializer(serializers.ModelSerializer):

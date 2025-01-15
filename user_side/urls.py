@@ -17,7 +17,7 @@ Including another URLconf
 from django.urls import path
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .views import MyTokenObtainPairView,CustomTokenRefreshView
-from . import views, blogViews, questionView, usersView
+from . import views, blogViews, questionView, usersView, sessionView
 
 
 urlpatterns = [
@@ -67,6 +67,14 @@ urlpatterns = [
     path('notifications/unread_count/', usersView.unread_notification_count, name='unread_notification_count'),
     path('notifications/<int:pk>/mark_read/', usersView.mark_notification_read, name='mark_notification_read'),
     # path('notifications/mark_all_read/', usersView.mark_all_notifications_read, name='mark_all_notifications_read'),
+    
+    #sessionView
+    path('requests/', sessionView.skill_sharing_request_list, name='skill_sharing_request_list'),
+    path('requests/<int:pk>/', sessionView.skill_sharing_request_detail, name='skill_sharing_request_detail'),
+    path('schedules/', sessionView.schedule_list, name='schedule_list'),
+    path('schedules/<int:pk>/', sessionView.schedule_detail, name='schedule_detail'),
+    path('requests/my/', sessionView.my_skill_request, name='my_skill_request'),
+    
     
 ]
 
