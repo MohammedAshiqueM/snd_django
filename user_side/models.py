@@ -555,7 +555,7 @@ class Schedule(models.Model):
     timezone = models.CharField(max_length=50)
     status = models.CharField(max_length=2, choices=Status.choices, default=Status.PROPOSED)
     note = models.TextField(blank=True)
-
+    created_at = models.DateTimeField(auto_now_add=True)
     class Meta:
         db_table = 'schedules'
         unique_together = ('request', 'teacher')
@@ -612,6 +612,24 @@ class Schedule(models.Model):
             schedule=self,
             request=self.request
         )
+    
+    @transaction.atomic
+    def reject(self):
+        """Accept the proposed schedule"""
+        if self.status != self.Status.PROPOSED:
+            raise ValidationError("Only proposed schedules can be accepted")
+            
+        # Reject other proposals
+        Schedule.objects.filter(
+            request=self.request,
+            status=self.Status.REJECTED
+        ).exclude(id=self.id).update(status=self.Status.REJECTED)
+        
+        self.status = self.Status.REJECTED
+        
+        self.save()
+        self.request.save()
+
         
 class Rating(models.Model):
     teacher = models.ForeignKey(User, on_delete=models.CASCADE, related_name='teacher_ratings')

@@ -280,6 +280,8 @@ class SkillSharingRequestSerializer(serializers.ModelSerializer):
     tags = serializers.SerializerMethodField()
     preferred_time = serializers.DateTimeField(required=True)
     duration_minutes = serializers.IntegerField(required=True)
+    schedule_proposals_count = serializers.SerializerMethodField()
+    has_proposed = serializers.SerializerMethodField()
     # status = serializers.CharField(read_only=True)
     
     class Meta:
@@ -287,8 +289,20 @@ class SkillSharingRequestSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'user', 'title', 'body_content', 
             'duration_minutes', 'preferred_time', 'created_at',
-            'updated_at', 'status', 'tags'
+            'updated_at', 'status', 'tags', 'schedule_proposals_count','has_proposed'
         ]
+    def get_has_proposed(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return False
+        return Schedule.objects.filter(
+            request=obj,
+            teacher=request.user
+        ).exists()
+        
+    def get_schedule_proposals_count(self, obj):
+        return Schedule.objects.filter(request=obj).count()
+    
     def get_tags(self, obj):
         return RequestTagSerializer(obj.tags.through.objects.filter(request=obj), many=True).data
 

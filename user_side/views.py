@@ -370,6 +370,13 @@ def google_login(request):
         GOOGLE_CLIENT_ID = config('GOOGLE_CLIENT_ID')
         idinfo = id_token.verify_oauth2_token(id_token_str, requests.Request(), GOOGLE_CLIENT_ID)
         
+        # idinfo = id_token.verify_oauth2_token(
+        #     id_token_str, 
+        #     requests.Request(), 
+        #     GOOGLE_CLIENT_ID,
+        #     clock_skew_in_seconds=10  # Allow 10 seconds of clock skew for the time issue on server
+        # )
+        
         # Validate audience
         if idinfo['aud'] != GOOGLE_CLIENT_ID:
             raise AuthenticationFailed('Invalid audience')

@@ -71,9 +71,14 @@ urlpatterns = [
     #sessionView
     path('requests/', sessionView.skill_sharing_request_list, name='skill_sharing_request_list'),
     path('requests/<int:pk>/', sessionView.skill_sharing_request_detail, name='skill_sharing_request_detail'),
-    path('schedules/', sessionView.schedule_list, name='schedule_list'),
-    path('schedules/<int:pk>/', sessionView.schedule_detail, name='schedule_detail'),
     path('requests/my/', sessionView.my_skill_request, name='my_skill_request'),
+    path('propose/', sessionView.propose_list, name='propose_list'),
+    path('propose/<int:pk>/', sessionView.propose_detail, name='propose_detail'),
+    path('requests/<int:request_id>/propose/', sessionView.request_proposes, name='request_propose'),
+    path('propose/send/', sessionView.send_proposes, name='send_proposes'),
+    path('propose/receved/', sessionView.receved_proposes, name='receved_proposes'),
+    path('schedules/teaching/', sessionView.teaching_schedules, name='teaching-schedules'),
+    path('schedules/learning/', sessionView.learning_schedules, name='learning-schedules'),
     
     
 ]
