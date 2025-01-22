@@ -24,17 +24,6 @@ def generate_room_id(user1_id, user2_id):
     return f"room_{sorted_ids[0]}_{sorted_ids[1]}"
 
 class NotificationService:
-    # @staticmethod
-    # @database_sync_to_async
-    # def create_notification(receiver_id, sender_username, message, sender_id, notification_type="message"):
-    #     notification = Notification.objects.create(
-    #         user_id=receiver_id,
-    #         sender_id=sender_id,
-    #         message=f"New message from {sender_username}: {message[:50]}...",
-    #         type=notification_type,
-    #         is_read=False
-    #     )
-    #     return notification
 
     @staticmethod
     @database_sync_to_async
@@ -277,20 +266,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return User.objects.get(id=user_id)
         except User.DoesNotExist:
             return None
-                
-    # @database_sync_to_async
-    # def create_notification(self, receiver_id, message, sender_id, sender_username):
-    #     try:
-    #         from .models import Notification
-    #         Notification.objects.create(
-    #             user_id=receiver_id,
-    #             sender_id=sender_id,
-    #             message=f"New message from {sender_username}: {message[:50]}...",
-    #             type="message",
-    #             is_read=False
-    #         )
-    #     except Exception as e:
-    #         logger.error(f"Failed to create notification: {e}")
 
 
     async def receive(self, text_data):
@@ -304,25 +279,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
             message = data['message']
             username = data['username']
             
-            # notification = await NotificationService.create_notification(
-            #     receiver_id, 
-            #     username, 
-            #     message,
-            #     sender_id,
-            # )
-            
-            # channel_name = await NotificationService.get_user_channel_name(receiver_id)
-            # if channel_name:
-            #     await self.channel_layer.group_send(
-            #         channel_name,
-            #         {
-            #             'type': 'notification_message',
-            #             'message': message,
-            #             'sender': username,
-            #             'sender_id': sender_id,
-            #             'notification_id': notification.id
-            #         }
-            #     )
                 
             saved_message = await self.save_message(sender_id, receiver_id, message)
             current_time = datetime.now().isoformat()   
@@ -365,15 +321,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             logger.error(f"Error in receive: {e}")
             
-    # async def notification_message(self, event):
-    #     """Handle sending notifications to users"""
-    #     logger.info(f"Notification event: {event}")
-    #     await self.send(text_data=json.dumps({
-    #         'type': 'notification',
-    #         'message': event['message'],
-    #         'sender': event['sender'],
-    #         'sender_id': event['sender_id']
-    #     }))
 
     async def chat_message(self, event):
         try:

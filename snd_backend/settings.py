@@ -38,6 +38,8 @@ CHANNEL_LAYERS = {
         },
     },
 }
+# Redis settings
+REDIS_URL = 'redis://localhost:6379'  # Adjust this according to your Redis server
 
 # CHANNEL_LAYERS['default']['CONFIG']['allowed_hosts'] = ['*']
 AUTH_USER_MODEL = 'user_side.User'

@@ -26,7 +26,16 @@ from django.db import transaction, models
 import math
 from django.http import JsonResponse, Http404
 from rest_framework.pagination import PageNumberPagination
-
+from django.utils import timezone
+from datetime import timedelta
+from django.db.models import (
+    Q, F, Max, Count, OuterRef, Subquery, 
+    CharField, DateTimeField, IntegerField
+)
+from django.db.models.functions import Coalesce
+from urllib.parse import parse_qs
+from django.core.exceptions import PermissionDenied
+from . utils import validate_access_token
 User = get_user_model()
 
 class UserPagination(PageNumberPagination):
@@ -136,15 +145,6 @@ def follow_unfollow(request,pk):
     except User.DoesNotExist:
         return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
     
-from django.db.models import (
-    Q, F, Max, Count, OuterRef, Subquery, 
-    CharField, DateTimeField, IntegerField
-)
-from django.db.models.functions import Coalesce
-from rest_framework.response import Response
-from urllib.parse import parse_qs
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -248,45 +248,30 @@ def all_users(request):
     except Exception as e:
         return Response({"error": str(e)}, status=500)
 
-from django.http import JsonResponse
-from django.core.exceptions import PermissionDenied
-from . utils import validate_access_token  # Replace with your token validation logic
-# @csrf_exempt
-# @api_view(['POST'])
+
 @permission_classes([IsAuthenticated])
 def websocket_handshake(request, user_id,target_id):
-    # Retrieve token from HttpOnly cookie
-    # print(request.COOKIES)
     token = request.COOKIES.get("access_token")
-    # print("the token is ",token)
     if not token:
         return JsonResponse({"error": "Access token not found"}, status=401)
-
-    # Validate token
     try:
         validate_access_token(token) 
     except PermissionDenied:
         return JsonResponse({"error": "Invalid or expired token"}, status=401)
 
-    # Dynamically generate the WebSocket URL
     websocket_url = f"ws://127.0.0.1:8000/ws/chat/{user_id}/{target_id}/?token={token}"
     return JsonResponse({"websocket_url": websocket_url})
 
 @permission_classes([IsAuthenticated])
 def notification_handshake(request, user_id):
-    # Retrieve token from HttpOnly cookie
-    # print(request.COOKIES)
+  
     token = request.COOKIES.get("access_token")
-    # print("the token is ",token)
     if not token:
         return JsonResponse({"error": "Access token not found"}, status=401)
-
-    # Validate token
     try:
         validate_access_token(token)
     except PermissionDenied:
         return JsonResponse({"error": "Invalid or expired token"}, status=401)
-
     # Dynamically generate the WebSocket URL
     websocket_url = f"ws://127.0.0.1:8000/ws/notifications/{user_id}/?token={token}"
     return JsonResponse({"websocket_url": websocket_url})
@@ -310,10 +295,6 @@ def get_online_status(request):
     ).values_list('user_id', flat=True)
     return Response({'online_users': list(online_users)})
 
-
-from rest_framework import viewsets
-from rest_framework.decorators import action
-from rest_framework.response import Response
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -350,3 +331,74 @@ def mark_notification_read(request, pk):
     notification.is_read = True
     notification.save()
     return Response({'status': 'success'})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def join_meeting(request, schedule_id):
+    try:
+        schedule = Schedule.objects.get(
+            id=schedule_id,
+            status=Schedule.Status.ACCEPTED
+        )
+        
+        # Verify user is participant
+        if request.user not in [schedule.teacher, schedule.student]:
+            return Response(
+                {"error": "Not authorized for this meeting"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        # Check meeting time (5 min before to 30 min after)
+        now = timezone.now()
+        if not (schedule.scheduled_time - timedelta(minutes=5) <= now <= 
+                schedule.scheduled_time + timedelta(minutes=30)):
+            return Response(
+                {"error": "Meeting is not active at this time"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        return Response({
+            "meeting_id": str(schedule.id),
+            "role": "teacher" if request.user == schedule.teacher else "student"
+        })
+        
+    except Schedule.DoesNotExist:
+        return Response(
+            {"error": "Meeting not found"}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def verify_meeting(request, schedule_id):
+    user_id = request.user.id
+    token = request.COOKIES.get("access_token")
+    if not token:
+        return JsonResponse({"error": "Access token not found"}, status=401)
+    try:
+        schedule = Schedule.objects.get(
+            id=schedule_id,
+            status=Schedule.Status.ACCEPTED
+        )
+        
+        if request.user not in [schedule.teacher, schedule.student]:
+            return Response(
+                {"error": "Not authorized"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        websocket_url = f"ws://127.0.0.1:8000/ws/video/{schedule_id}/{user_id}/?token={token}"
+        
+        return Response({
+            "valid": True,
+            "role": "teacher" if request.user == schedule.teacher else "student",
+            "websocket_url": websocket_url
+        })
+        
+    except Schedule.DoesNotExist:
+        return Response(
+            {"error": "Invalid meeting"}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+        

@@ -60,6 +60,8 @@ urlpatterns = [
     path('users/<int:pk>/follow-unfollow/', usersView.follow_unfollow, name='follow-unfollow'),
     path("ws-handshake/<int:user_id>/<int:target_id>/", usersView.websocket_handshake, name="websocket_handshake"),
     path("notification-handshake/<int:user_id>/", usersView.notification_handshake, name="notification_handshake"),
+    path('meeting/<int:schedule_id>/join/', usersView.join_meeting, name='join_meeting'),
+    path('meeting/<int:schedule_id>/verify/', usersView.verify_meeting, name='verify_meeting'),
     
     path('mark/<int:contact_id>/', usersView.mark_messages_as_read, name='mark'),
     path('onlilne-status/', usersView.get_online_status, name='online-status'),
