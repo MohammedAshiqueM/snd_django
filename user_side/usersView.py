@@ -402,3 +402,27 @@ def verify_meeting(request, schedule_id):
             status=status.HTTP_404_NOT_FOUND
         )
         
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])        
+def time_transactions(request):
+    # Fetch transactions for the current user (both sent and received)
+        sent_transactions = TimeTransaction.objects.filter(from_user=request.user)
+        received_transactions = TimeTransaction.objects.filter(to_user=request.user)
+        
+        # Combine and order transactions by most recent
+        transactions = (sent_transactions | received_transactions).order_by('-created_at')
+        
+        # Serialize the transactions
+        serializer = TimeTransactionSerializer(transactions, many=True)
+        
+        # Prepare response with time balance information
+        response_data = {
+            'transactions': serializer.data,
+            'time_balance': {
+                'total_time': request.user.total_time,
+                'available_time': request.user.available_time,
+                'held_time': request.user.held_time
+            }
+        }
+        
+        return Response(response_data)

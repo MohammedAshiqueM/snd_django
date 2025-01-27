@@ -69,7 +69,7 @@ urlpatterns = [
     path('notifications/unread_count/', usersView.unread_notification_count, name='unread_notification_count'),
     path('notifications/<int:pk>/mark_read/', usersView.mark_notification_read, name='mark_notification_read'),
     # path('notifications/mark_all_read/', usersView.mark_all_notifications_read, name='mark_all_notifications_read'),
-    
+    path('time-transactions/', usersView.time_transactions, name='time-transactions'),
     #sessionView
     path('requests/', sessionView.skill_sharing_request_list, name='skill_sharing_request_list'),
     path('requests/<int:pk>/', sessionView.skill_sharing_request_detail, name='skill_sharing_request_detail'),

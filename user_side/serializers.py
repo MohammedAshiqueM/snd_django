@@ -87,7 +87,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name', 
             'profile_image', 'banner_image', 'linkedin_url', 
-            'github_url', 'about', 'rating', 'time_balance', 
+            'github_url', 'about', 'rating', 'time_balance', 'available_time', 'held_time',
             'skills', 'followers', 'following', 
             'last_active','role','is_blocked',
             'last_message', 'last_message_time', 
