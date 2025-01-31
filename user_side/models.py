@@ -717,3 +717,47 @@ class Notification(models.Model):
     type = models.CharField(max_length=50)
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+    
+class TimePlan(models.Model):
+    name = models.CharField(max_length=100)
+    minutes = models.PositiveIntegerField(
+        validators=[MinValueValidator(1)],
+        help_text="Number of minutes in the plan"
+    )
+    price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(1)],
+        help_text="Price in INR"
+    )
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'time_plans'
+        ordering = ['price']
+
+class TimeOrder(models.Model):
+    class OrderStatus(models.TextChoices):
+        PENDING = 'PE', 'Pending'
+        SUCCESSFUL = 'SU', 'Successful'
+        FAILED = 'FA', 'Failed'
+
+    user = models.ForeignKey('User', on_delete=models.CASCADE)
+    plan = models.ForeignKey(TimePlan, on_delete=models.PROTECT)
+    order_id = models.CharField(max_length=100, unique=True)
+    razorpay_order_id = models.CharField(max_length=100, unique=True)
+    razorpay_payment_id = models.CharField(max_length=100, null=True, blank=True)
+    razorpay_signature = models.CharField(max_length=200, null=True, blank=True)
+    status = models.CharField(
+        max_length=2,
+        choices=OrderStatus.choices,
+        default=OrderStatus.PENDING
+    )
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'time_orders'

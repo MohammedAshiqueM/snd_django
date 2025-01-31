@@ -15,43 +15,6 @@ import tempfile
 import os
 
 User = get_user_model()
-# class CodeEditorConsumer(AsyncWebsocketConsumer):
-#     SUPPORTED_LANGUAGES = {
-#         'python': {
-#             'file_extension': '.py',
-#             'run_command': lambda filename: [sys.executable, filename]
-#         },
-#         'javascript': {
-#             'file_extension': '.js',
-#             'run_command': lambda filename: ['node', filename]
-#         },
-#         'cpp': {
-#             'file_extension': '.cpp',
-#             'run_command': lambda filename: [
-#                 'g++', filename, '-o', filename.replace('.cpp', ''), 
-#                 '&&', filename.replace('.cpp', '')
-#             ]
-#         },
-#         'java': {
-#             'file_extension': '.java',
-#             'run_command': lambda filename: [
-#                 'javac', filename, 
-#                 '&&', 'java', os.path.splitext(os.path.basename(filename))[0]
-#             ]
-#         },
-#         'typescript': {
-#             'file_extension': '.ts',
-#             'run_command': lambda filename: ['ts-node', filename]
-#         },
-#         'rust': {
-#             'file_extension': '.rs',
-#             'run_command': lambda filename: ['rustc', filename, '-o', filename.replace('.rs', ''), '&&', filename.replace('.rs', '')]
-#         },
-#         'go': {
-#             'file_extension': '.go',
-#             'run_command': lambda filename: ['go', 'run', filename]
-#         }
-#     }
 
 class VideoMeetConsumer(AsyncWebsocketConsumer):
     SUPPORTED_LANGUAGES = {
@@ -170,6 +133,40 @@ class VideoMeetConsumer(AsyncWebsocketConsumer):
                     }
                 }
             )
+        
+        elif message_type == 'end_call_request':
+            user_id = self.scope['url_route']['kwargs']['user_id']
+            user = await database_sync_to_async(User.objects.get)(id=user_id)
+            
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'end_call_request',
+                    'sender_id': user.id,
+                    'sender_name': user.get_full_name() or user.username,
+                    'sender_role': data.get('sender_role'),
+                    'elapsed_minutes': data.get('elapsed_minutes')
+                }
+            )
+        
+        elif message_type == 'end_call_response':
+            if data.get('approved'):
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        'type': 'end_call_confirmed',
+                        'elapsed_minutes': data.get('elapsed_minutes')
+                    }
+                )
+            else:
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        'type': 'end_call_rejected',
+                        'sender_id': data.get('sender_id')
+                    }
+                )
+                
         else:
             # Handle WebRTC signaling messages
             await self.channel_layer.group_send(
@@ -265,6 +262,27 @@ class VideoMeetConsumer(AsyncWebsocketConsumer):
             capture_output=True, 
             shell=isinstance(command, str) or len(command) > 2
         )
+    
+    async def end_call_request(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'end_call_request',
+            'sender_id': event['sender_id'],
+            'sender_name': event['sender_name'],
+            'sender_role': event['sender_role'],
+            'elapsed_minutes': event['elapsed_minutes']
+        }))
+
+    async def end_call_confirmed(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'end_call_confirmed',
+            'elapsed_minutes': event['elapsed_minutes']
+        }))
+
+    async def end_call_rejected(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'end_call_rejected',
+            'sender_id': event['sender_id']
+        }))
         
     async def chat_message(self, event):
         # Send chat message to WebSocket

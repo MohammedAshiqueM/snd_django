@@ -259,6 +259,8 @@ SOCIALACCOUNT_PROVIDERS = {
     }
 }
 
+RAZORPAY_KEY_ID = config('RAZORPAY_KEY')
+RAZORPAY_KEY_SECRET = config('RAZORPAY_SECRET')
 
 from datetime import timedelta
 

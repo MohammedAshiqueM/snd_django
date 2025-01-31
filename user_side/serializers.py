@@ -4,7 +4,7 @@ from rest_framework import serializers
 from .models import (
     User, Follower, Tag, UserSkill, Blog, BlogTag, BlogVote, BlogComment, 
     Question, QuestionTag, QuestionVote, Answer, SkillSharingRequest, RequestTag,
-    Schedule, Rating, Report, TimeTransaction, Message, OnlineUser, Notification
+    Schedule, Rating, Report, TimeTransaction, Message, OnlineUser, Notification, TimePlan, TimeOrder
 )
 from enum import Enum
 from django.db.models import Q
@@ -386,3 +386,30 @@ class NotificationSerializer(serializers.ModelSerializer):
         instance.is_read = validated_data.get('is_read', instance.is_read)
         instance.save()
         return instance
+    
+class TimePlanSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TimePlan
+        fields = ['id', 'name', 'minutes', 'price', 'description']
+        
+class TimeOrderSerializer(serializers.ModelSerializer):
+    plan = TimePlanSerializer(read_only=True)
+    status_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = TimeOrder
+        fields = [
+            'id', 
+            'order_id',
+            'razorpay_order_id',
+            'razorpay_payment_id',
+            'status',
+            'status_display',
+            'amount',
+            'plan',
+            'created_at',
+            'updated_at'
+        ]
+    
+    def get_status_display(self, obj):
+        return obj.get_status_display()

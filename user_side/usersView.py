@@ -7,14 +7,15 @@ from django.views.decorators.csrf import csrf_exempt
 from .models import (
     Follower, Tag, UserSkill, Blog, BlogTag, BlogVote, BlogComment, 
     Question, QuestionTag, QuestionVote, Answer, SkillSharingRequest, RequestTag,
-    Schedule, Rating, Report, TimeTransaction, Message, OnlineUser, Notification
+    Schedule, Rating, Report, TimeTransaction, Message, OnlineUser, Notification, TimeOrder, TimePlan
 )
 from .serializers import (
     MyTokenObtainPairSerializer,TagSerializer,BlogSerializer,UserSerializer,
     RatingSerializer,ReportSerializer,BlogTagSerializer,BlogVoteSerializer,
     FollowerSerializer,QuestionSerializer,ScheduleSerializer,UserSkillSerializer,
     RequestTagSerializer,BlogCommentSerializer,QuestionTagSerializer,QuestionVoteSerializer,
-    AnswerSerializer,SkillSharingRequest,TimeTransactionSerializer,SkillSharingRequestSerializer,NotificationSerializer
+    AnswerSerializer,SkillSharingRequest,TimeTransactionSerializer,SkillSharingRequestSerializer,
+    NotificationSerializer,TimePlanSerializer,TimeOrderSerializer
     )
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -36,6 +37,18 @@ from django.db.models.functions import Coalesce
 from urllib.parse import parse_qs
 from django.core.exceptions import PermissionDenied
 from . utils import validate_access_token
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from django.shortcuts import get_object_or_404
+import razorpay
+from django.conf import settings
+import hmac
+import hashlib
+import uuid
+from django.db.models import Avg
+
 User = get_user_model()
 
 class UserPagination(PageNumberPagination):
@@ -426,3 +439,174 @@ def time_transactions(request):
         }
         
         return Response(response_data)
+    
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_time_plans(request):
+    """Get all active time plans"""
+    plans = TimePlan.objects.filter(is_active=True)
+    serializer = TimePlanSerializer(plans, many=True)
+    return Response(serializer.data)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_order(request, plan_id):
+    """Create a new Razorpay order"""
+    plan = get_object_or_404(TimePlan, id=plan_id, is_active=True)
+    
+    # Initialize Razorpay client
+    client = razorpay.Client(
+        auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET)
+    )
+    
+    # Create Razorpay order
+    payment_data = {
+        'amount': int(plan.price * 100),  # Amount in paise
+        'currency': 'INR',
+        'receipt': f'order_{uuid.uuid4().hex}',
+        'notes': {
+            'plan_id': plan.id,
+            'minutes': plan.minutes,
+            'user_id': request.user.id
+        }
+    }
+    
+    try:
+        razorpay_order = client.order.create(data=payment_data)
+        
+        # Create local order
+        order = TimeOrder.objects.create(
+            user=request.user,
+            plan=plan,
+            order_id=payment_data['receipt'],
+            razorpay_order_id=razorpay_order['id'],
+            amount=plan.price
+        )
+        
+        return Response({
+            'order_id': razorpay_order['id'],
+            'amount': payment_data['amount'],
+            'currency': payment_data['currency'],
+            'key': settings.RAZORPAY_KEY_ID
+        })
+    
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def verify_payment(request, plan_id):
+    """Verify Razorpay payment and credit time"""
+    razorpay_order_id = request.data.get('razorpay_order_id')
+    razorpay_payment_id = request.data.get('razorpay_payment_id')
+    razorpay_signature = request.data.get('razorpay_signature')
+    
+    if not all([razorpay_order_id, razorpay_payment_id, razorpay_signature]):
+        return Response(
+            {'error': 'Missing required payment details'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    try:
+        # Verify signature
+        msg = f'{razorpay_order_id}|{razorpay_payment_id}'
+        generated_signature = hmac.new(
+            settings.RAZORPAY_KEY_SECRET.encode(),
+            msg.encode(),
+            hashlib.sha256
+        ).hexdigest()
+        
+        if generated_signature != razorpay_signature:
+            return Response(
+                {'error': 'Invalid payment signature'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get and update order
+        order = get_object_or_404(TimeOrder, razorpay_order_id=razorpay_order_id)
+        order.status = TimeOrder.OrderStatus.SUCCESSFUL
+        order.razorpay_payment_id = razorpay_payment_id
+        order.razorpay_signature = razorpay_signature
+        order.save()
+        
+        # Credit time to user's account
+        user = order.user
+        user.available_time += order.plan.minutes
+        user.save()
+        
+        # Create time transaction
+        TimeTransaction.objects.create(
+            from_user=User.objects.get(is_superuser=True),  # System user
+            to_user=user,
+            amount=order.plan.minutes
+        )
+        
+        return Response({
+            'status': 'success',
+            'message': f'Successfully credited {order.plan.minutes} minutes',
+            'new_balance': user.available_time
+        })
+        
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_purchase_history(request):
+    """
+    Retrieve purchase history for the authenticated user
+    """
+    orders = TimeOrder.objects.filter(
+        user=request.user
+    ).select_related('plan').order_by('-created_at')
+    
+    serializer = TimeOrderSerializer(orders, many=True)
+    return Response(serializer.data)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_rating(request):
+    print(request.data)
+    teacher_id = request.data.get('teacher_id')
+    rating_value = request.data.get('rating')
+    
+    # Validate input
+    if not teacher_id or not rating_value:
+        return Response(
+            {'error': 'Both teacher_id and rating are required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+        
+    try:
+        rating_value = float(rating_value)
+        if not 0 <= rating_value <= 5:
+            raise ValueError
+    except ValueError:
+        return Response(
+            {'error': 'Rating must be a number between 0 and 5'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Get teacher user
+    teacher = get_object_or_404(User, id=teacher_id)
+    
+    # Create rating
+    rating = Rating.objects.create(
+        teacher=teacher,
+        student=request.user,
+        rating=rating_value
+    )
+    
+    # Update teacher's average rating
+    avg_rating = Rating.objects.filter(teacher=teacher).aggregate(Avg('rating'))['rating__avg']
+    teacher.rating = round(avg_rating, 1)
+    teacher.save()
+    
+    serializer = RatingSerializer(rating)
+    return Response(serializer.data, status=status.HTTP_201_CREATED)

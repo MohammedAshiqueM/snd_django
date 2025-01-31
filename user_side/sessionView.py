@@ -7,7 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import api_view, permission_classes
 from .serializers import SkillSharingRequestSerializer
 from rest_framework import status
-from .models import Schedule, SkillSharingRequest, Tag, RequestTag, Follower
+from .models import Schedule, SkillSharingRequest, Tag, RequestTag, Follower, TimeTransaction
 from .serializers import ScheduleSerializer
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q, F
@@ -456,3 +456,98 @@ def learning_schedules(request):
     serializer = ScheduleSerializer(result_page, many=True)
     
     return paginator.get_paginated_response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def session_details(request, pk):
+    try:
+        # Use get() instead of filter() to retrieve a single object
+        schedule = Schedule.objects.select_related(
+            'request',
+            'teacher',
+            'student'
+        ).get(pk=pk)
+        
+        serializer = ScheduleSerializer(schedule)
+        return Response(serializer.data)
+        
+    except Schedule.DoesNotExist:
+        return Response(
+            {"error": "Schedule not found"}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        return Response(
+            {"error": str(e)}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+@transaction.atomic
+@permission_classes([IsAuthenticated])
+def transfer_time(request):
+    """
+    Transfer time from student to teacher based on the actual meeting duration.
+    """
+    try:
+        # Extract data from the request
+            schedule_id = request.data.get('meeting_id')
+            elapsed_minutes = request.data.get('elapsedMinutes')
+            
+            if not schedule_id or not elapsed_minutes:
+                raise ValidationError("Invalid schedule ID or elapsed time.")
+            
+            elapsed_minutes = int(elapsed_minutes)
+            if elapsed_minutes <= 0:
+                raise ValidationError("Elapsed time must be greater than zero.")
+            
+            # Fetch the schedule and related users
+            schedule = Schedule.objects.select_related('student', 'teacher').get(id=schedule_id)
+            student = schedule.student
+            teacher = schedule.teacher
+            
+            # Ensure the schedule is in the correct state
+            if schedule.status != Schedule.Status.ACCEPTED:
+                raise ValidationError("Time can only be transferred for accepted schedules.")
+            
+            # Calculate the time to transfer (not exceeding the scheduled duration)
+            scheduled_duration = schedule.request.duration_minutes
+            transfer_minutes = min(elapsed_minutes, scheduled_duration)
+            
+            # Validate student's held time
+            if student.held_time < transfer_minutes:
+                raise ValidationError("Student does not have enough held time for transfer.")
+            
+            # Perform the time transfer
+            student.held_time -= transfer_minutes
+            teacher.available_time += transfer_minutes
+            
+            # Save the updated user balances
+            student.save()
+            teacher.save()
+            
+            # Create a time transaction record
+            TimeTransaction.objects.create(
+                from_user=student,
+                to_user=teacher,
+                amount=transfer_minutes,
+                schedule=schedule,
+            )
+            
+            # Update the schedule status to completed
+            schedule.status = Schedule.Status.COMPLETED
+            schedule.save()
+            
+            return Response({
+                'status': 'success',
+                'message': f'Transferred {transfer_minutes} minutes from student to teacher.',
+                'student_held_time': student.held_time,
+                'teacher_available_time': teacher.available_time
+            })
+        
+    except Schedule.DoesNotExist:
+        return Response({'status': 'error', 'message': 'Schedule not found.'}, status=404)
+    except ValidationError as e:
+        return Response({'status': 'error', 'message': str(e)}, status=400)
+    except Exception as e:
+        return Response({'status': 'error', 'message': f'An error occurred: {str(e)}'}, status=500)
