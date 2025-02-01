@@ -7,20 +7,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-@shared_task
-def send_skill_request_notifications(request_id):
-    """
-    Send email notifications to users with matching skills
-    for a new skill sharing request
-    """
-    print("inside the send skill request")
+@shared_task(bind=True, max_retries=3, autoretry_for=(Exception,), retry_backoff=True)
+def send_skill_request_notifications(self, request_id):
+    logger.info("Starting task: send_skill_request_notifications")
     try:
         User = get_user_model()
         SkillSharingRequest = apps.get_model('user_side', 'SkillSharingRequest')
         RequestTag = apps.get_model('user_side', 'RequestTag')
-        
-        # Log the start of task
-        logger.info(f"Starting email notifications for request {request_id}")
         
         request = SkillSharingRequest.objects.get(id=request_id)
         request_tags = RequestTag.objects.filter(request=request).values_list('tag_id', flat=True)
@@ -30,8 +23,6 @@ def send_skill_request_notifications(request_id):
         ).exclude(
             id=request.user.id
         ).distinct()
-        
-        logger.info(f"Found {matching_users.count()} matching users")
         
         messages = []
         subject = f"New Skill Sharing Request: {request.title}"
@@ -64,12 +55,11 @@ def send_skill_request_notifications(request_id):
             ))
         
         if messages:
-            logger.info(f"Attempting to send {len(messages)} emails")
             send_mass_mail(messages, fail_silently=False)
-            logger.info("Emails sent successfully")
+            logger.info(f"Emails sent successfully to {len(messages)} users")
             
         return f"Sent notifications to {len(messages)} users"
         
     except Exception as e:
-        logger.error(f"Error in send_skill_request_notifications: {str(e)}", exc_info=True)
-        raise  # Re-raise the exception so Celery knows the task failed
+        logger.error(f"Task failed: {e}")
+        raise

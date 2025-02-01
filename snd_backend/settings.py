@@ -66,6 +66,7 @@ INSTALLED_APPS = [
     'allauth.socialaccount',
     'social_django',
     'admin_side',
+    'django_celery_results'
 ]
 
 MIDDLEWARE = [
@@ -287,12 +288,12 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 16,
 }
 
-SESSION_COOKIE_SAMESITE = 'None'  # Ensure this is set to 'None' for cross-origin cookies
+SESSION_COOKIE_SAMESITE = 'Lax'  # Ensure this is set to 'None' for cross-origin cookies
 SESSION_COOKIE_SECURE = False  # Set to True in production (use HTTPS)
 
 SESSION_COOKIE_SAMESITE = 'lax'  # change this to none on production (now both are in http://127.0.0.1:)
 SESSION_COOKIE_HTTPONLY = True
-CSRF_COOKIE_SAMESITE = 'None'  # or 'lax' 
+CSRF_COOKIE_SAMESITE = 'Lax'  # or 'lax' 
 CSRF_COOKIE_HTTPONLY = True 
 CSRF_COOKIE_SECURE = False
 CSRF_COOKIE_HTTP_ONLY = True
@@ -324,9 +325,12 @@ LOGGING = {
 }
 
 # Celery Configuration
-CELERY_BROKER_URL = 'redis://localhost:6379/0'  # You can use Redis as broker
-CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
-CELERY_ACCEPT_CONTENT = ['json']
+CELERY_BROKER_URL = 'redis://127.0.0.1:6379'  # You can use Redis as broker
+CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379'
+CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'UTC'
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60
+broker_connection_retry_on_startup = True

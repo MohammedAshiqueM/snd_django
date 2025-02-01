@@ -19,6 +19,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import F
 from rest_framework.exceptions import ValidationError
+from .tasks import send_skill_request_notifications
 User = get_user_model()
 
 
@@ -142,81 +143,95 @@ def skill_sharing_request_list(request):
 @api_view(['GET', 'PUT', 'DELETE', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def skill_sharing_request_detail(request, pk):
+    import logging
+    logger = logging.getLogger(__name__)
+    
     skill_request = get_object_or_404(SkillSharingRequest, pk=pk)
+    print(">>>>>", skill_request.id)
 
+    # Handle GET request
     if request.method == 'GET':
-        serializer = SkillSharingRequestSerializer(skill_request,context={'request': request})
+        serializer = SkillSharingRequestSerializer(skill_request, context={'request': request})
         is_following = Follower.objects.filter(
-            follower=request.user, 
+            follower=request.user,
             following=skill_request.user
         ).exists()
         data = serializer.data
         data['is_following'] = is_following
         return JsonResponse(data)
 
+    # Handle PUT/PATCH requests
     if request.method in ['PUT', 'PATCH']:
-        if skill_request.user != request.user:
-            return JsonResponse(
-                {'error': 'You can only edit your own requests.'},
-                status=status.HTTP_403_FORBIDDEN
+        try:
+            data = JSONParser().parse(request)
+            print(f"Received data: {data}")
+            
+            original_status = skill_request.status
+            
+            if 'status' in data:
+                new_status = data['status']
+                print(f"Status change requested: {original_status} -> {new_status}")
+                
+                if new_status == 'PE' and original_status == 'DR':
+                    # try:
+                        # from redis import Redis
+                        # redis_client = Redis(host='localhost', port=6379, db=0, socket_connect_timeout=5)
+                        # redis_client.ping()
+                        
+                        # print("Redis connection successful")
+                        
+                        send_skill_request_notifications.delay(skill_request.id)
+                        # print(f"Task sent with id: {task_result.id}")
+                        
+                    # except Exception as e:
+                    #     print(f"Redis/Celery error: {str(e)}")
+                    #     logger.error(f"Redis Connection Failed: {e}", exc_info=True)
+            serializer = SkillSharingRequestSerializer(
+                skill_request,
+                data=data,
+                partial=request.method == 'PATCH'
             )
-
-        data = JSONParser().parse(request)
-        
-        # Store the original status for comparison
-        original_status = skill_request.status
-        
-        # Validate status changes
-        if 'status' in data:
-            new_status = data['status']
             
-            # Validate status transitions
-            if new_status == 'CA':  # Cancel request
-                if original_status not in ['DR', 'PE']:
-                    return JsonResponse(
-                        {'error': 'Can only cancel draft or pending requests'},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-            elif new_status == 'PE':  # Publish request
-                if original_status != 'DR':
-                    return JsonResponse(
-                        {'error': 'Can only publish draft requests'},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-
-        serializer = SkillSharingRequestSerializer(
-            skill_request,
-            data=data,
-            partial=request.method == 'PATCH'
-        )
-        
-        if serializer.is_valid():
-            # Save the request first
-            updated_request = serializer.save()
-            
-            # Handle time balance updates for cancellation
-            if 'status' in data and data['status'] == 'CA':
-                user = skill_request.user
-                duration = skill_request.duration_minutes
+            if serializer.is_valid():
+                updated_request = serializer.save()
                 
-                # Update time balances atomically
-                User.objects.filter(pk=user.pk).update(
-                    available_time=F('available_time') + duration,
-                    held_time=F('held_time') - duration
-                )
+                if data.get('status') == 'PE' and original_status == 'DR':
+                    try:
+                        updated_request.user.hold_time(updated_request.duration_minutes)
+                    except Exception as e:
+                        print(f"Error updating time balance: {str(e)}")
                 
-                # Refresh the user instance to get updated values
-                user.refresh_from_db()
+                return JsonResponse(serializer.data)
+            return JsonResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             
-            return JsonResponse(serializer.data)
-        return JsonResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+        except Exception as e:
+            print(f"Unexpected error: {str(e)}")
+            return JsonResponse({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    # Handle DELETE request
+    if request.method == 'DELETE':
+        skill_request.delete()
+        return JsonResponse({'message': 'Request deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+    # Default response if none of the methods match (shouldn't happen with @api_view decorator)
+    return JsonResponse({'error': 'Method not allowed'}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+from redis import Redis
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])   
 def my_skill_request(request):
         """
         To get requests of the requested user(current user)
         """
+        # try:
+        #     # Explicit Redis connection test
+        #     client = Redis(host='localhost', port=6379)
+        #     client.ping()
+        #     print("connected................................",client.ping())
+        # except Exception as e:
+        #     print(f"Redis Connection Error: {e}")
+        #     # Handle connection failure gracefully
+        #     return Response({'error': 'Redis unavailable'}, status=503)
+        # send_skill_request_notifications.delay(34)
         search_query = request.query_params.get('search', '').lower()
         category = request.query_params.get('category', None)
         requests = SkillSharingRequest.objects.filter(user__username=request.user).order_by('-created_at')
