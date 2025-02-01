@@ -13,10 +13,17 @@ from django.contrib.auth import get_user_model
 from datetime import datetime
 import tempfile
 import os
+import requests
+import logging
+
+logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
 class VideoMeetConsumer(AsyncWebsocketConsumer):
+    
+    PISTON_API_URL = "https://emkc.org/api/v2/piston/execute"
+    
     SUPPORTED_LANGUAGES = {
         'python': {
             'file_extension': '.py',
@@ -195,43 +202,62 @@ class VideoMeetConsumer(AsyncWebsocketConsumer):
         language = data.get('language', 'python')
         content = data.get('content', '')
 
-        if language not in self.SUPPORTED_LANGUAGES:
-            await self.channel_layer.group_send(
-            self.room_group_name,
-            {
-                'type': 'code_execution_result',
-                'error': f'Unsupported language: {language}',
-                'language': language
-            }
-        )
-            return
+        LANGUAGE_MAPPING = {
+            'python': {'language': 'python', 'version': '3.10.0'},
+            'javascript': {'language': 'javascript', 'version': '18.15.0'},
+            'typescript': {'language': 'typescript', 'version': '5.0.3'},
+            'cpp': {'language': 'cpp', 'version': '10.2.0'},
+            'java': {'language': 'java', 'version': '15.0.2'},
+            'go': {'language': 'go', 'version': '1.20.0'},
+            'rust': {'language': 'rust', 'version': '1.68.0'},
+        }
 
-        try:
-            with tempfile.NamedTemporaryFile(
-                suffix=self.SUPPORTED_LANGUAGES[language]['file_extension'], 
-                delete=False
-            ) as temp_file:
-                temp_file.write(content.encode('utf-8'))
-                temp_file.flush()
-                temp_filename = temp_file.name
-
-            # Execute the code
-            process = await self.async_run_command(
-                self.SUPPORTED_LANGUAGES[language]['run_command'](temp_filename)
-            )
-
-            # Broadcast execution results to all participants
+        if language not in LANGUAGE_MAPPING:
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
                     'type': 'code_execution_result',
-                    'output': process['stdout'],
-                    'error': process['stderr'],
+                    'error': f'Unsupported language: {language}',
+                    'language': language
+                }
+            )
+            return
+
+        # Prepare the payload for Piston API
+        runtime_info = LANGUAGE_MAPPING[language]
+        payload = {
+            'language': runtime_info['language'],
+            'version': runtime_info['version'],
+            'files': [{'content': content}],
+            'stdin': '',
+            'args': [],
+        }
+
+        try:
+            # POST request to the Piston API
+            print(f"Sending request to Piston API with payload: {payload}")
+            response = requests.post(self.PISTON_API_URL, json=payload)
+            result = response.json()
+            print(f"Received response from Piston API: {result}")
+
+            output = result.get('run', {}).get('output', '')
+            error = result.get('run', {}).get('stderr', '')
+
+            print(f"Output: {output}")
+            print(f"Error: {error}")
+
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'code_execution_result',
+                    'output': output,
+                    'error': error,
                     'language': language
                 }
             )
 
         except Exception as e:
+            print(f"Error executing code: {e}")
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
@@ -240,15 +266,10 @@ class VideoMeetConsumer(AsyncWebsocketConsumer):
                     'language': language
                 }
             )
-        finally:
-            # Clean up temporary file
-            if 'temp_filename' in locals():
-                os.unlink(temp_filename)
-
     
     
     async def async_run_command(self, command):
-        # Asynchronously run shell commands
+        # !Currently this code not in user
         process = await self.run_subprocess(command)
         return {
             'stdout': process.stdout.decode('utf-8').strip() if process.stdout else '',
@@ -285,7 +306,6 @@ class VideoMeetConsumer(AsyncWebsocketConsumer):
         }))
         
     async def chat_message(self, event):
-        # Send chat message to WebSocket
         await self.send(text_data=json.dumps(event['message']))
         
     async def relay_message(self, event):
