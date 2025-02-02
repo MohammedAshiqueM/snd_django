@@ -69,7 +69,7 @@ def skill_sharing_request_list(request):
         except json.JSONDecodeError:
             return api_response(status.HTTP_400_BAD_REQUEST, "Invalid tags")
         
-        serializer = SkillSharingRequestSerializer(data=data)
+        serializer = SkillSharingRequestSerializer(data=data,context={'request': request})
         
         try:
             if serializer.is_valid():
@@ -139,7 +139,6 @@ def skill_sharing_request_list(request):
                 str(e)
             )
     
-    
 @api_view(['GET', 'PUT', 'DELETE', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def skill_sharing_request_detail(request, pk):
@@ -147,11 +146,12 @@ def skill_sharing_request_detail(request, pk):
     logger = logging.getLogger(__name__)
     
     skill_request = get_object_or_404(SkillSharingRequest, pk=pk)
-    print(">>>>>", skill_request.id)
 
-    # Handle GET request
     if request.method == 'GET':
-        serializer = SkillSharingRequestSerializer(skill_request, context={'request': request})
+        serializer = SkillSharingRequestSerializer(
+            skill_request, 
+            context={'request': request}
+        )
         is_following = Follower.objects.filter(
             follower=request.user,
             following=skill_request.user
@@ -160,61 +160,59 @@ def skill_sharing_request_detail(request, pk):
         data['is_following'] = is_following
         return JsonResponse(data)
 
-    # Handle PUT/PATCH requests
     if request.method in ['PUT', 'PATCH']:
         try:
-            data = JSONParser().parse(request)
-            print(f"Received data: {data}")
-            
-            original_status = skill_request.status
-            
-            if 'status' in data:
-                new_status = data['status']
-                print(f"Status change requested: {original_status} -> {new_status}")
+            with transaction.atomic():
+                data = JSONParser().parse(request)
+                original_status = skill_request.status
                 
-                if new_status == 'PE' and original_status == 'DR':
-                    # try:
-                        # from redis import Redis
-                        # redis_client = Redis(host='localhost', port=6379, db=0, socket_connect_timeout=5)
-                        # redis_client.ping()
-                        
-                        # print("Redis connection successful")
-                        
-                        send_skill_request_notifications.delay(skill_request.id)
-                        # print(f"Task sent with id: {task_result.id}")
-                        
-                    # except Exception as e:
-                    #     print(f"Redis/Celery error: {str(e)}")
-                    #     logger.error(f"Redis Connection Failed: {e}", exc_info=True)
-            serializer = SkillSharingRequestSerializer(
-                skill_request,
-                data=data,
-                partial=request.method == 'PATCH'
-            )
-            
-            if serializer.is_valid():
-                updated_request = serializer.save()
+                serializer = SkillSharingRequestSerializer(
+                    skill_request,
+                    data=data,
+                    partial=request.method == 'PATCH',
+                    context={'request': request}
+                )
                 
-                if data.get('status') == 'PE' and original_status == 'DR':
-                    try:
-                        updated_request.user.hold_time(updated_request.duration_minutes)
-                    except Exception as e:
-                        print(f"Error updating time balance: {str(e)}")
+                if serializer.is_valid():
+                    updated_request = serializer.save()
+                    
+                    # Handle status change to pending
+                    if data.get('status') == 'PE' and original_status == 'DR':
+                        try:
+                            # Time validation already done in serializer
+                            updated_request.publish()
+                            # send_skill_request_notifications.delay(updated_request.id)
+                        except ValidationError as e:
+                            return JsonResponse(
+                                {'error': str(e)}, 
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+                    
+                    return JsonResponse(serializer.data)
+                    
+                return JsonResponse(
+                    serializer.errors, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
                 
-                return JsonResponse(serializer.data)
-            return JsonResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
         except Exception as e:
-            print(f"Unexpected error: {str(e)}")
-            return JsonResponse({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            logger.error(f"Error processing request: {str(e)}", exc_info=True)
+            return JsonResponse(
+                {'error': 'An unexpected error occurred'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
-    # Handle DELETE request
     if request.method == 'DELETE':
         skill_request.delete()
-        return JsonResponse({'message': 'Request deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+        return JsonResponse(
+            {'message': 'Request deleted successfully'}, 
+            status=status.HTTP_204_NO_CONTENT
+        )
 
-    # Default response if none of the methods match (shouldn't happen with @api_view decorator)
-    return JsonResponse({'error': 'Method not allowed'}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+    return JsonResponse(
+        {'error': 'Method not allowed'}, 
+        status=status.HTTP_405_METHOD_NOT_ALLOWED
+    )
 from redis import Redis
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])   

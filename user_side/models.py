@@ -16,7 +16,7 @@ from django.core.exceptions import ValidationError
 import uuid
 from django.utils.timezone import now, timedelta
 from django.db import transaction
-# from .tasks import send_skill_request_notifications
+from .tasks import send_skill_request_notifications
 
 def validate_image_size(image):
     """Validate that image file size is under 5MB"""
@@ -513,15 +513,17 @@ class SkillSharingRequest(models.Model):
     @transaction.atomic
     def publish(self):
         """Publish request and hold time"""
-        if self.status != self.Status.DRAFT:
-            raise ValidationError("Only draft requests can be published")
+        print("#######",self.status)
+        
+        # if self.status != self.Status.DRAFT:
+        #     raise ValidationError("Only draft requests can be published")
             
         # Check and hold time
         self.user.hold_time(self.duration_minutes)
         self.status = self.Status.PENDING
         self.save()
 
-        # send_skill_request_notifications.delay(self.id)
+        send_skill_request_notifications.delay(self.id)
         
     @transaction.atomic
     def cancel(self):

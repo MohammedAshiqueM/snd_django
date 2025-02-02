@@ -291,6 +291,43 @@ class SkillSharingRequestSerializer(serializers.ModelSerializer):
             'duration_minutes', 'preferred_time', 'created_at',
             'updated_at', 'status', 'tags', 'schedule_proposals_count','has_proposed'
         ]
+        
+    def validate(self, data):
+        # Get the request context
+        print("data ",data)
+        request = self.context.get('request')
+        if not request:
+            raise serializers.ValidationError("No request object found in context")
+
+        # Get the instance if this is an update
+        instance = self.instance
+        
+        # Get the new status if it's being changed
+        new_status = data.get('status')
+        
+        # Check if this is a new request with status 'PE' or changing status to 'PE'
+        if (not instance and new_status == 'PE') or \
+           (instance and new_status == 'PE' and instance.status == 'DR'):
+            
+            # Get duration from data or instance
+            duration = data.get('duration_minutes', 
+                              getattr(instance, 'duration_minutes', None))
+            
+            if not request.user.has_sufficient_time(duration):
+                raise serializers.ValidationError({
+                    'duration_minutes': f'Insufficient time balance. You need {duration} minutes but only have {request.user.available_time} minutes available.'
+                })
+
+        # Validate preferred time
+        if 'preferred_time' in data:
+            self.validate_preferred_time(data['preferred_time'])
+            
+        # Validate duration
+        if 'duration_minutes' in data:
+            self.validate_duration_minutes(data['duration_minutes'])
+
+        return data
+
     def get_has_proposed(self, obj):
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:

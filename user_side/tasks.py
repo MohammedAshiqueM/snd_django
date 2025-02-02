@@ -44,7 +44,7 @@ def send_skill_request_notifications(self, request_id):
             If you're interested in teaching this session, please log in to respond.
 
             Best regards,
-            Your Platform Team
+            Snd Team
             """
             
             messages.append((
