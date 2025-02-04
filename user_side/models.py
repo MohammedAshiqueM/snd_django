@@ -9,14 +9,15 @@ from django.core.validators import (
 from django.utils import timezone
 from django.utils.text import slugify
 import os
-from PIL import Image
-from io import BytesIO
-from django.core.files.uploadedfile import InMemoryUploadedFile
+# from PIL import Image
+# from io import BytesIO
+# from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.core.exceptions import ValidationError
 import uuid
 from django.utils.timezone import now, timedelta
 from django.db import transaction
 from .tasks import send_skill_request_notifications
+from cloudinary.models import CloudinaryField
 
 def validate_image_size(image):
     """Validate that image file size is under 5MB"""
@@ -26,46 +27,64 @@ def validate_image_size(image):
         raise ValidationError(f"Maximum file size is {limit_mb}MB")
 
 
-def user_profile_image_path(instance, filename):
-    """Path to upload profile images: profile_images/uuid.extension"""
-    ext = filename.split('.')[-1]
-    filename = f'{uuid.uuid4()}.{ext}'
-    return os.path.join('profile_images', filename)
+# def user_profile_image_path(instance, filename):
+#     """Path to upload profile images: profile_images/uuid.extension"""
+#     ext = filename.split('.')[-1]
+#     filename = f'{uuid.uuid4()}.{ext}'
+#     return os.path.join('profile_images', filename)
 
 
-def user_banner_image_path(instance, filename):
-    """Path to upload banner images: banner_images/uuid.extension"""
-    ext = filename.split('.')[-1]
-    filename = f'{uuid.uuid4()}_banner.{ext}'
-    return os.path.join('banner_images', filename)
+# def user_banner_image_path(instance, filename):
+#     """Path to upload banner images: banner_images/uuid.extension"""
+#     ext = filename.split('.')[-1]
+#     filename = f'{uuid.uuid4()}_banner.{ext}'
+#     return os.path.join('banner_images', filename)
 
 
-def blog_image_path(instance, filename):
-    """Path to upload blog images with slugified title"""
-    ext = filename.split('.')[-1]
-    slug = slugify(instance.title)
-    filename = f'{slug}_{timezone.now().timestamp()}.{ext}'
-    return os.path.join('blog_images', str(instance.user.id), filename)
+# def blog_image_path(instance, filename):
+#     """Path to upload blog images with slugified title"""
+#     ext = filename.split('.')[-1]
+#     slug = slugify(instance.title)
+#     filename = f'{slug}_{timezone.now().timestamp()}.{ext}'
+#     return os.path.join('blog_images', str(instance.user.id), filename)
 
 class User(AbstractUser):
-    profile_image = models.ImageField(
-        upload_to=user_profile_image_path,
+    profile_image = CloudinaryField(
+        'profile_image',
+        folder='profile_images',
+        null=True,
+        blank=True,
         validators=[
             FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png']),
             validate_image_size
         ],
-        null=True,
-        blank=True,
+        transformation={
+            'width': 300,
+            'height': 300,
+            'crop': 'fill',
+            'gravity': 'face',
+            'quality': 'auto',
+            'format': 'jpg',
+            'fetch_format': 'auto'
+        },
         help_text="Profile image of the user (max 5MB)"
     )
-    banner_image = models.ImageField(
-        upload_to=user_banner_image_path,
+    banner_image = CloudinaryField(
+        'banner_image',
+        folder='banner_images',
+        null=True,
+        blank=True,
         validators=[
             FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png']),
             validate_image_size
         ],
-        null=True,
-        blank=True,
+        transformation={
+            'width': 1200,
+            'height': 400,
+            'crop': 'fill',
+            'quality': 'auto',
+            'format': 'jpg'
+        },
         help_text="Banner image for the user profile page (max 5MB)"
     )
     linkedin_url = models.URLField(
@@ -163,60 +182,60 @@ class User(AbstractUser):
             models.Index(fields=['last_active'], name='user_last_active_idx'),
         ]
         
-    def save(self, *args, **kwargs):
-        """Resize and optimize profile and banner images before saving."""
-        if self.profile_image and hasattr(self.profile_image, 'file'):
-            self.profile_image = self._resize_image(
-                self.profile_image,
-                size=(300, 300),
-                crop=True
-            )
-        if self.banner_image and hasattr(self.banner_image, 'file'):
-            self.banner_image = self._resize_image(
-                self.banner_image,
-                size=(1200, 400),
-                crop=False
-            )
-        super().save(*args, **kwargs)
+    # def save(self, *args, **kwargs):
+    #     """Resize and optimize profile and banner images before saving."""
+    #     if self.profile_image and hasattr(self.profile_image, 'file'):
+    #         self.profile_image = self._resize_image(
+    #             self.profile_image,
+    #             size=(300, 300),
+    #             crop=True
+    #         )
+    #     if self.banner_image and hasattr(self.banner_image, 'file'):
+    #         self.banner_image = self._resize_image(
+    #             self.banner_image,
+    #             size=(1200, 400),
+    #             crop=False
+    #         )
+    #     super().save(*args, **kwargs)
 
-    def _resize_image(self, image_field, size, crop=False):
-        """Helper to resize and optimize images"""
-        img = Image.open(image_field)
+    # def _resize_image(self, image_field, size, crop=False):
+    #     """Helper to resize and optimize images"""
+    #     img = Image.open(image_field)
         
-        # Convert to RGB if necessary
-        if img.mode in ('RGBA', 'P'):
-            img = img.convert('RGB')
+    #     # Convert to RGB if necessary
+    #     if img.mode in ('RGBA', 'P'):
+    #         img = img.convert('RGB')
             
-        if crop:
-            # Calculate dimensions to crop to desired aspect ratio
-            target_ratio = size[0] / size[1]
-            img_ratio = img.width / img.height
+    #     if crop:
+    #         # Calculate dimensions to crop to desired aspect ratio
+    #         target_ratio = size[0] / size[1]
+    #         img_ratio = img.width / img.height
             
-            if img_ratio > target_ratio:
-                # Image is wider than needed
-                new_width = int(img.height * target_ratio)
-                left = (img.width - new_width) // 2
-                img = img.crop((left, 0, left + new_width, img.height))
-            elif img_ratio < target_ratio:
-                # Image is taller than needed
-                new_height = int(img.width / target_ratio)
-                top = (img.height - new_height) // 2
-                img = img.crop((0, top, img.width, top + new_height))
+    #         if img_ratio > target_ratio:
+    #             # Image is wider than needed
+    #             new_width = int(img.height * target_ratio)
+    #             left = (img.width - new_width) // 2
+    #             img = img.crop((left, 0, left + new_width, img.height))
+    #         elif img_ratio < target_ratio:
+    #             # Image is taller than needed
+    #             new_height = int(img.width / target_ratio)
+    #             top = (img.height - new_height) // 2
+    #             img = img.crop((0, top, img.width, top + new_height))
         
-        img = img.resize(size, Image.LANCZOS)
+    #     img = img.resize(size, Image.LANCZOS)
         
-        output = BytesIO()
-        img.save(output, format='JPEG', quality=85, optimize=True)
-        output.seek(0)
+    #     output = BytesIO()
+    #     img.save(output, format='JPEG', quality=85, optimize=True)
+    #     output.seek(0)
         
-        return InMemoryUploadedFile(
-            output,
-            'ImageField',
-            f"{os.path.splitext(image_field.name)[0]}.jpg",
-            'image/jpeg',
-            output.getbuffer().nbytes,
-            None
-        )
+    #     return InMemoryUploadedFile(
+    #         output,
+    #         'ImageField',
+    #         f"{os.path.splitext(image_field.name)[0]}.jpg",
+    #         'image/jpeg',
+    #         output.getbuffer().nbytes,
+    #         None
+    #     )
         
     def is_otp_valid(self):
         """Check if the OTP is still valid on time."""
@@ -328,14 +347,22 @@ class Blog(models.Model):
     body_content = models.TextField(
         help_text="Main content of the blog post"
     )
-    image = models.ImageField(
-        upload_to=blog_image_path,
+    image = CloudinaryField(
+        'blog_image',
+        folder='blog_images',
+        null=True,
+        blank=True,
         validators=[
             FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png']),
             validate_image_size
         ],
-        null=True,
-        blank=True,
+        transformation={
+            'width': 800,
+            'height': 600,
+            'crop': 'fill',
+            'quality': 'auto',
+            'format': 'jpg'
+        },
         help_text="Featured image for the blog post (max 5MB)"
     )
     created_at = models.DateTimeField(default=timezone.now)
@@ -373,13 +400,13 @@ class Blog(models.Model):
                 counter += 1
         
         # Resize blog image if present
-        if self.image and hasattr(self.image, 'file'):
-            self.image = User._resize_image(
-                self,
-                self.image,
-                size=(800, 600),
-                crop=False
-            )
+        # if self.image and hasattr(self.image, 'file'):
+        #     self.image = User._resize_image(
+        #         self,
+        #         self.image,
+        #         size=(800, 600),
+        #         crop=False
+        #     )
             
         super().save(*args, **kwargs)
 
