@@ -8,7 +8,7 @@ import django.utils.timezone
 import user_side.models
 from django.conf import settings
 from django.db import migrations, models
-
+from cloudinary.models import CloudinaryField
 
 class Migration(migrations.Migration):
 
@@ -44,8 +44,8 @@ class Migration(migrations.Migration):
                 ('is_staff', models.BooleanField(default=False, help_text='Designates whether the user can log into this admin site.', verbose_name='staff status')),
                 ('is_active', models.BooleanField(default=True, help_text='Designates whether this user should be treated as active. Unselect this instead of deleting accounts.', verbose_name='active')),
                 ('date_joined', models.DateTimeField(default=django.utils.timezone.now, verbose_name='date joined')),
-                ('profile_image', models.ImageField(blank=True, help_text='Profile image of the user (max 5MB)', null=True, upload_to=user_side.models.user_profile_image_path, validators=[django.core.validators.FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png']), user_side.models.validate_image_size])),
-                ('banner_image', models.ImageField(blank=True, help_text='Banner image for the user profile page (max 5MB)', null=True, upload_to=user_side.models.user_banner_image_path, validators=[django.core.validators.FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png']), user_side.models.validate_image_size])),
+                ('profile_image', CloudinaryField('profile_image',folder='profile_images',null=True,blank=True,validators=[django.core.validators.FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png']),user_side.models.validate_image_size],transformation={'width': 300,'height': 300,'crop': 'fill','gravity': 'face','quality': 'auto','format': 'jpg','fetch_format': 'auto'},help_text="Profile image of the user (max 5MB)")),
+                ('banner_image', CloudinaryField('banner_image',folder='banner_images',null=True,blank=True,validators=[django.core.validators.FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png']),user_side.models.validate_image_size],transformation={'width': 1200,'height': 400,'crop': 'fill','quality': 'auto','format': 'jpg'},help_text="Banner image for the user profile page (max 5MB)")),
                 ('linkedin_url', models.URLField(blank=True, help_text='Your LinkedIn profile URL', validators=[django.core.validators.RegexValidator(message='Enter a valid LinkedIn URL (e.g., https://www.linkedin.com/in/username)', regex='^https:\\/\\/(www\\.)?linkedin\\.com\\/.*$')])),
                 ('github_url', models.URLField(blank=True, help_text='Your GitHub profile URL', validators=[django.core.validators.RegexValidator(message='Enter a valid GitHub URL (e.g., https://github.com/username)', regex='^https:\\/\\/(www\\.)?github\\.com\\/.*$')])),
                 ('about', models.TextField(blank=True, help_text='Tell us about yourself')),
@@ -69,7 +69,7 @@ class Migration(migrations.Migration):
                 ('title', models.CharField(help_text='Blog post title', max_length=50)),
                 ('slug', models.SlugField(blank=True, help_text='URL-friendly version of the title', max_length=60, unique=True)),
                 ('body_content', models.TextField(help_text='Main content of the blog post')),
-                ('image', models.ImageField(blank=True, help_text='Featured image for the blog post (max 5MB)', null=True, upload_to=user_side.models.blog_image_path, validators=[django.core.validators.FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png']), user_side.models.validate_image_size])),
+                ('image', CloudinaryField('blog_image',folder='blog_images',null=True,blank=True,validators=[django.core.validators.FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png']),user_side.models.validate_image_size],transformation={'width': 800,'height': 600,'crop': 'fill','quality': 'auto','format': 'jpg'},help_text="Featured image for the blog post (max 5MB)")),
                 ('created_at', models.DateTimeField(default=django.utils.timezone.now)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
                 ('is_published', models.BooleanField(default=True, help_text='Whether the blog post is publicly visible')),
