@@ -715,9 +715,32 @@ class TimeTransaction(models.Model):
         db_table = 'time_transactions'
               
 class Message(models.Model):
+    MEDIA_TYPES = [
+        ('text', 'Text'),
+        ('image', 'Image'),
+        ('video', 'Video'),
+        ('audio', 'Audio'),
+        ('file', 'File')
+    ]
     sender = models.ForeignKey(User, related_name='sent_messages', on_delete=models.CASCADE)
     receiver = models.ForeignKey(User, related_name='received_messages', on_delete=models.CASCADE)
     content = models.TextField()
+    media = CloudinaryField(
+        'media', 
+        blank=True, 
+        null=True,
+        folder='chat_media',
+        resource_type='auto',  # Allows uploading different media types
+        transformation={
+            'quality': 'auto',
+            'fetch_format': 'auto'
+        }
+    )
+    media_type = models.CharField(
+        max_length=10, 
+        choices=MEDIA_TYPES, 
+        default='text'
+    )
     timestamp = models.DateTimeField(auto_now_add=True)
     is_read = models.BooleanField(default=False)
 
@@ -732,6 +755,8 @@ class Message(models.Model):
             is_read=False
         ).update(is_read=True)
         
+    def __str__(self):
+        return f"Message from {self.sender} to {self.receiver} at {self.timestamp}"
     
 class OnlineUser(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)

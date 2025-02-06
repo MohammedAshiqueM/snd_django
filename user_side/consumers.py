@@ -15,6 +15,13 @@ from django.db.models import (
 )
 import uuid
 from django.core.cache import cache
+import base64
+import json
+from channels.generic.websocket import AsyncWebsocketConsumer
+from channels.db import database_sync_to_async
+from datetime import datetime
+import cloudinary.uploader
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -108,9 +115,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
             history.append({
                 'content': msg.content,
                 'sender_id': msg.sender_id,
-                'timestamp': msg.timestamp.isoformat() 
+                'receiver_id': msg.receiver_id,
+                'timestamp': msg.timestamp.isoformat(),
+                'media': msg.media.url if msg.media else None,
+                'media_type': msg.media_type
             })
         return history
+
     
     @database_sync_to_async
     def update_user_online_status(self, is_online):
@@ -271,70 +282,140 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def receive(self, text_data):
         try:
             data = json.loads(text_data)
-            # print("the scope in receive...", self.scope)
-            
-            # print(data)
+            logger.info(f"Received data: {data}")
+
+            if data.get('type') == 'request_online_status':
+                await self.broadcast_online_status()
+                return
+
             sender_id = int(self.scope['url_route']['kwargs']['current_user_id'])
             receiver_id = int(self.scope['url_route']['kwargs']['target_user_id'])
-            message = data['message']
-            username = data['username']
+            message = data.get('message', '')
+            username = data.get('username')
+            media = data.get('media')
+            media_type = data.get('media_type')
+
+            if not message and not media:
+                logger.info("Empty message received, skipping processing.")
+                return
             
-                
-            saved_message = await self.save_message(sender_id, receiver_id, message)
-            current_time = datetime.now().isoformat()   
+            if not username:
+                user = await self.get_user(sender_id)
+                username = user.username if user else f"User {sender_id}"
+
+            logger.info(f"Processing message - Type: {media_type}, Has Media: {bool(media)}")
+
+            # Save message only once with both text and media
+            saved_message = await self.save_message_with_media(
+                sender_id, receiver_id, message, media, media_type
+            )
+            
+            current_time = datetime.now().isoformat()
+            
             # Check if receiver is in the room
             receiver_in_room = (
                 self.room_id in ChatConsumer.active_rooms and 
                 receiver_id in ChatConsumer.active_rooms[self.room_id]
             )
-            
-            # await self.save_message(sender_id, receiver_id, message)
-            # current_time = datetime.now().isoformat()
 
+            # Single message data including both text and media
+            message_data = {
+                'type': 'chat_message',
+                'message': saved_message.content,  # Use saved message content
+                'username': username,
+                'sender_id': sender_id,
+                'receiver_id': receiver_id,
+                'timestamp': current_time,
+                'media': saved_message.media if saved_message.media else None,
+                'media_type': saved_message.media_type if saved_message.media_type else None
+            }
+                
+            logger.info(f"Sending message data: {message_data}")
+            
+            # Send single message to room group
             await self.channel_layer.group_send(
                 self.room_group_name,
-                {
-                    'type': 'chat_message',
-                    'message': message,
-                    'username': username,
-                    'sender_id': sender_id,
-                    'receiver_id': receiver_id,
-                    'timestamp': current_time
-                }
+                message_data
             )
-            
-            # Create notification if receiver is not in room
+
+            # Create notification with appropriate content
             if not receiver_in_room:
-                notification_group = f"notifications_{receiver_id}"
+                notification_message = message if message else "Sent a media file"
+                if saved_message.media and message:
+                    notification_message = f"{message} (with media)"
+                
                 await self.channel_layer.group_send(
-                    notification_group,
+                    f"notifications_{receiver_id}",
                     {
                         'type': 'notification_message',
-                        'message': message,
+                        'message': notification_message,
                         'notification_type': 'message',
                         'sender_id': sender_id,
                         'sender_name': username,
                         'timestamp': current_time
                     }
                 )
-        
-        except Exception as e:
-            logger.error(f"Error in receive: {e}")
-            
 
-    async def chat_message(self, event):
-        try:
-            # Send the message to WebSocket
-            await self.send(text_data=json.dumps({
-                
-                'message': event['message'],
-                'username': event['username'],
-                'sender_id': event['sender_id'],
-                'receiver_id': event['receiver_id'],
-                'timestamp': event['timestamp']
-            }))
         except Exception as e:
-            logger.error(f"Error in chat_message: {e}")
+            logger.error(f"Error in receive: {e}", exc_info=True)
+            await self.send(text_data=json.dumps({
+                'type': 'error',
+                'message': str(e)
+            })) 
+    @database_sync_to_async
+    def save_message_with_media(self, sender_id, receiver_id, message, media_data, media_type):
+        """Save a message with media to the database and Cloudinary"""
+        try:
+            cloudinary_url = None
+            if media_data:
+                logger.info(f"Processing media of type: {media_type}")
+                
+                # Extract base64 data
+                if ';base64,' in media_data:
+                    media_data = media_data.split(';base64,')[1]
+                
+                try:
+                    # Upload to Cloudinary
+                    upload_result = cloudinary.uploader.upload(
+                        f"data:image/{media_type};base64,{media_data}",
+                        folder="chat_media",
+                        resource_type="auto",
+                    )
+                    cloudinary_url = upload_result['secure_url']
+                    logger.info(f"Media uploaded successfully: {cloudinary_url}")
+                except Exception as upload_error:
+                    logger.error(f"Cloudinary upload failed: {upload_error}")
+                    raise
+
+            # Create message
+            message = Message.objects.create(
+                sender_id=sender_id,
+                receiver_id=receiver_id,
+                content=message,
+                media=cloudinary_url,
+                media_type=media_type if media_type else 'text'
+            )
+            logger.info(f"Message saved successfully with ID: {message.id}")
+            return message
+
+        except Exception as e:
+            logger.error(f"Error saving message: {e}", exc_info=True)
+            raise
+
+        
+    async def chat_message(self, event):
+        """Handle chat message sending to WebSocket"""
+        try:
+            # Remove internal fields before sending
+            message_data = {k: v for k, v in event.items() if k != 'type'}
+            message_data['type'] = 'new_message'  # Add message type for frontend
+            
+            logger.info(f"Sending WebSocket message: {message_data}")
+            
+            await self.send(text_data=json.dumps(message_data))
+            
+        except Exception as e:
+            logger.error(f"Error in chat_message: {e}", exc_info=True)
             
 
 
