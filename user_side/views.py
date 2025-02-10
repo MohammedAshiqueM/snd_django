@@ -53,6 +53,7 @@ import math
 import time
 from django.contrib.auth import logout as auth_logout
 from django.contrib.auth.signals import user_logged_in
+from decouple import config
 
 User = get_user_model()
 
@@ -283,6 +284,8 @@ def verify_otp(request):
             user.is_active = True 
             user.otp_code = None
             user.otp_created_at = None
+            user.available_time = 120
+            user.time_balance = 120
             user.save()
             
             token_serializer = MyTokenObtainPairSerializer()
@@ -395,6 +398,11 @@ def google_login(request):
             }
         )
         
+        if created:
+            user.available_time = 120
+            user.time_balance = 120
+            user.save()
+        
         refresh = RefreshToken.for_user(user)
         access_token = str(refresh.access_token)
         refresh_token = str(refresh)
@@ -440,8 +448,8 @@ def forgot_password(request):
             user.generate_reset_token()
 
             # frontend_url = "http://localhost:5173"
-            frontend_url = "http://127.0.0.1:5173/" 
-            reset_url = f"{frontend_url}reset-password/?token={user.reset_token}"
+            frontend_url = config('FRONTEND_URL') 
+            reset_url = f"{frontend_url}/reset-password/?token={user.reset_token}"
 
             send_mail(
                 subject="Password Reset Request",

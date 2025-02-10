@@ -42,7 +42,7 @@ CHANNEL_LAYERS = {
     },
 }
 # Redis settings
-REDIS_URL = 'redis://localhost:6379'  # Adjust this according to your Redis server
+REDIS_URL = 'redis://localhost:6379'  # Adjust this according Redis server (for production)
 
 # CHANNEL_LAYERS['default']['CONFIG']['allowed_hosts'] = ['*']
 AUTH_USER_MODEL = 'user_side.User'
@@ -276,7 +276,7 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
-    'AUTH_COOKIE': 'access_token',  # Optional, if you also store the access token
+    'AUTH_COOKIE': 'access_token',  # Optional, also store the access token
     'AUTH_COOKIE_REFRESH': 'refresh_token',
 }
 
@@ -330,7 +330,7 @@ LOGGING = {
 }
 
 # Celery Configuration
-CELERY_BROKER_URL = 'redis://127.0.0.1:6379'  # You can use Redis as broker
+CELERY_BROKER_URL = 'redis://127.0.0.1:6379'  # Redis as broker
 CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379'
 CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'

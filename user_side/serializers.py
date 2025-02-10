@@ -39,7 +39,6 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         data = super().validate(attrs)
         user = self.user
         
-        # Define role using the same logic as above
         if user.is_superuser:
             role = UserRole.ADMIN.value
         elif user.is_staff:
@@ -97,9 +96,6 @@ class UserSerializer(serializers.ModelSerializer):
             'password': {'write_only': True},
         }
     
-    # def get_skills(self, obj):
-    #     # Return the names of the skills instead of IDs
-    #     return [tag.name for tag in obj.skills.all()]
     def get_skills(self, obj):
         return UserSkillSerializer(obj.skills.through.objects.filter(user=obj), many=True).data
     
@@ -204,11 +200,11 @@ class BlogSerializer(serializers.ModelSerializer):
             image_url = obj.image.url
             if request:
                 absolute_url = request.build_absolute_uri(image_url)
-                print(f"Absolute URL: {absolute_url}")  # Debugging
+                print(f"Absolute URL: {absolute_url}")
                 return absolute_url
-            print(f"Relative URL: {image_url}")  # Debugging
+            print(f"Relative URL: {image_url}")
             return image_url
-        print("No image found.")  # Debugging
+        print("No image found.")
         return None
 
     def get_comment_count(self, obj):
@@ -302,7 +298,6 @@ class SkillSharingRequestSerializer(serializers.ModelSerializer):
         # Get the instance if this is an update
         instance = self.instance
         
-        # Get the new status if it's being changed
         new_status = data.get('status')
         
         # Check if this is a new request with status 'PE' or changing status to 'PE'
@@ -318,11 +313,9 @@ class SkillSharingRequestSerializer(serializers.ModelSerializer):
                     'duration_minutes': f'Insufficient time balance. You need {duration} minutes but only have {request.user.available_time} minutes available.'
                 })
 
-        # Validate preferred time
         if 'preferred_time' in data:
             self.validate_preferred_time(data['preferred_time'])
             
-        # Validate duration
         if 'duration_minutes' in data:
             self.validate_duration_minutes(data['duration_minutes'])
 

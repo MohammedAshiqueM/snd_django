@@ -3,6 +3,11 @@ from rest_framework import status
 from rest_framework_simplejwt.authentication import JWTAuthentication
 import os
 from django.utils.timezone import now
+import jwt
+from django.core.exceptions import PermissionDenied
+from django.conf import settings
+from rest_framework_simplejwt.tokens import AccessToken
+from jwt import ExpiredSignatureError, InvalidTokenError as TokenError
 
 
 def api_response(status, message, data=None,):
@@ -44,12 +49,6 @@ def user_profile_image_path(instance, filename):
 def user_banner_image_path(instance, filename):
     return os.path.join('banner_images', str(instance.id), filename)
 
-import jwt
-from django.core.exceptions import PermissionDenied
-from django.conf import settings
-
-from rest_framework_simplejwt.tokens import AccessToken
-from jwt import ExpiredSignatureError, InvalidTokenError as TokenError
 
 def validate_access_token(token):
     try:

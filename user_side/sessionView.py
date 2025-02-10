@@ -90,7 +90,6 @@ def skill_sharing_request_list(request):
                 with transaction.atomic():
                     request_obj = serializer.save(user=user, status=request_status )
                     
-                    # Handle tags
                     invalid_tags = []
                     valid_tags = []
                     for tag_name in tags:
@@ -116,7 +115,7 @@ def skill_sharing_request_list(request):
                         )
                         # Refresh user instance to get updated values
                         user.refresh_from_db()
-                
+                        send_skill_request_notifications.delay(request_obj.id)
                 return api_response(
                     status.HTTP_201_CREATED,
                     "Request created successfully",
@@ -176,12 +175,9 @@ def skill_sharing_request_detail(request, pk):
                 if serializer.is_valid():
                     updated_request = serializer.save()
                     
-                    # Handle status change to pending
                     if data.get('status') == 'PE' and original_status == 'DR':
                         try:
-                            # Time validation already done in serializer
                             updated_request.publish()
-                            # send_skill_request_notifications.delay(updated_request.id)
                         except ValidationError as e:
                             return JsonResponse(
                                 {'error': str(e)}, 
@@ -220,16 +216,6 @@ def my_skill_request(request):
         """
         To get requests of the requested user(current user)
         """
-        # try:
-        #     # Explicit Redis connection test
-        #     client = Redis(host='localhost', port=6379)
-        #     client.ping()
-        #     print("connected................................",client.ping())
-        # except Exception as e:
-        #     print(f"Redis Connection Error: {e}")
-        #     # Handle connection failure gracefully
-        #     return Response({'error': 'Redis unavailable'}, status=503)
-        # send_skill_request_notifications.delay(34)
         search_query = request.query_params.get('search', '').lower()
         category = request.query_params.get('category', None)
         requests = SkillSharingRequest.objects.filter(user__username=request.user).order_by('-created_at')
@@ -261,21 +247,18 @@ def propose_list(request):
         print("Received data:", data) 
         skill_request = get_object_or_404(SkillSharingRequest, id=data.get('request'))
 
-        # Validate request status
         if skill_request.status != SkillSharingRequest.Status.PENDING:
             return JsonResponse(
                 {'error': 'Can only propose schedules for pending requests.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Prevent the request creator from proposing schedules
         if skill_request.user == request.user:
             return JsonResponse(
                 {'error': 'You cannot propose a schedule for your own request.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Prevent duplicate schedule proposals
         if Schedule.objects.filter(
             request=skill_request,
             teacher=request.user
@@ -326,7 +309,6 @@ def propose_detail(request, pk):
             elif new_status == Schedule.Status.REJECTED:
                 schedule.reject()
             elif new_status == Schedule.Status.CANCELLED:
-                # Add cancellation logic if needed
                 pass
         except ValidationError as e:
             return JsonResponse({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -405,17 +387,14 @@ def teaching_schedules(request):
     """
     paginator = Pagiator()
     
-    # Get query parameters
     search = request.GET.get('search', '')
     category = request.GET.get('category', '')
     
-    # Base queryset
     schedules = Schedule.objects.filter(
     teacher=request.user, status=Schedule.Status.ACCEPTED
     ).select_related('request', 'teacher', 'student')
 
     
-    # Apply filters
     if search:
         schedules = schedules.filter(
             Q(request__title__icontains=search) |
@@ -425,10 +404,8 @@ def teaching_schedules(request):
     if category:
         schedules = schedules.filter(request__tags__name=category)
     
-    # Order by created date
     schedules = schedules.order_by('-created_at')
     
-    # Paginate results
     result_page = paginator.paginate_queryset(schedules, request)
     serializer = ScheduleSerializer(result_page, many=True)
     
@@ -442,16 +419,13 @@ def learning_schedules(request):
     """
     paginator = Pagiator()
     
-    # Get query parameters
     search = request.GET.get('search', '')
     category = request.GET.get('category', '')
     
-    # Base queryset
     schedules = Schedule.objects.filter(
     student=request.user, status=Schedule.Status.ACCEPTED
     ).select_related('request', 'teacher', 'student')
     
-    # Apply filters
     if search:
         schedules = schedules.filter(
             Q(request__title__icontains=search) |
@@ -461,10 +435,8 @@ def learning_schedules(request):
     if category:
         schedules = schedules.filter(request__tags__name=category)
     
-    # Order by created date
     schedules = schedules.order_by('-created_at')
     
-    # Paginate results
     result_page = paginator.paginate_queryset(schedules, request)
     serializer = ScheduleSerializer(result_page, many=True)
     
@@ -474,7 +446,6 @@ def learning_schedules(request):
 @permission_classes([IsAuthenticated])
 def session_details(request, pk):
     try:
-        # Use get() instead of filter() to retrieve a single object
         schedule = Schedule.objects.select_related(
             'request',
             'teacher',
@@ -503,7 +474,6 @@ def transfer_time(request):
     Transfer time from student to teacher based on the actual meeting duration.
     """
     try:
-        # Extract data from the request
             schedule_id = request.data.get('meeting_id')
             elapsed_minutes = request.data.get('elapsedMinutes')
             
@@ -514,12 +484,10 @@ def transfer_time(request):
             if elapsed_minutes <= 0:
                 raise ValidationError("Elapsed time must be greater than zero.")
             
-            # Fetch the schedule and related users
             schedule = Schedule.objects.select_related('student', 'teacher').get(id=schedule_id)
             student = schedule.student
             teacher = schedule.teacher
             
-            # Ensure the schedule is in the correct state
             if schedule.status != Schedule.Status.ACCEPTED:
                 raise ValidationError("Time can only be transferred for accepted schedules.")
             

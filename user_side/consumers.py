@@ -1,4 +1,3 @@
-import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.core.serializers.json import DjangoJSONEncoder
@@ -8,7 +7,6 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.db.models import Q
 from django.contrib.auth import get_user_model
-import logging
 from django.db.models import (
     Q, F, Max, Count, OuterRef, Subquery, 
     CharField, DateTimeField, IntegerField
@@ -17,11 +15,11 @@ import uuid
 from django.core.cache import cache
 import base64
 import json
-from channels.generic.websocket import AsyncWebsocketConsumer
-from channels.db import database_sync_to_async
 from datetime import datetime
 import cloudinary.uploader
 import logging
+from django.utils import timezone
+from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +39,9 @@ class NotificationService:
         except OnlineUser.DoesNotExist:
             return None
         
-        
+
+# Chat Consumer Class
+  
 class ChatConsumer(AsyncWebsocketConsumer):
     active_rooms = {}
     
@@ -190,7 +190,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.accept()
             await self.broadcast_online_status()
             
-            # Rest of your existing connect code...
             self.target_user_id = int(self.scope['url_route']['kwargs']['target_user_id'])
             if not self.target_user_id:
                 raise ValueError("Target user ID is missing from the scope.")
@@ -419,16 +418,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             
 
 
-# class NotificationConsumer(AsyncWebsocketConsumer):
-#     import json
-from channels.generic.websocket import AsyncWebsocketConsumer
-from channels.db import database_sync_to_async
-from django.utils import timezone
-from django.db import transaction
-from .models import Notification
-import logging
 
-logger = logging.getLogger(__name__)
+# Notification Class
 
 class NotificationConsumer(AsyncWebsocketConsumer):
     user_connections = {}
@@ -475,7 +466,7 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             if 'message_id' not in event:
                 event['message_id'] = str(uuid.uuid4())
 
-            # Use Redis or cache to track recently sent notifications
+            # Use Redis or cache to track recently sent notifications (currently not using Redis here)
             cache_key = f"sent_notification:{self.user_id}:{event['message_id']}"
             if await self.is_notification_recently_sent(cache_key):
                 return
@@ -522,7 +513,6 @@ class NotificationConsumer(AsyncWebsocketConsumer):
     def create_or_get_notification(self, notification_key, event):
         """Create notification with deduplication using transaction"""
         with transaction.atomic():
-            # Reduce the deduplication window to 10 seconds instead of 1 minute
             time_threshold = timezone.now() - timezone.timedelta(seconds=10)
             
             recent_notification = (
@@ -538,7 +528,6 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             )
             
             if recent_notification:
-                # Update the existing notification's timestamp
                 recent_notification.created_at = timezone.now()
                 recent_notification.save()
                 return recent_notification
@@ -697,5 +686,5 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             sender_id=event['sender_id'],
             message=f"New message from {event['sender_name']}: {event['message'][:50]}...",
             type=event['notification_type'],
-            created_at__gte=datetime.now().replace(second=0, microsecond=0)  # Within the last minute
+            created_at__gte=datetime.now().replace(second=0, microsecond=0)
         ).exists()

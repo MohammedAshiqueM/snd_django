@@ -8,14 +8,14 @@ from rest_framework.response import Response
 from user_side.models import (
     Follower, Tag, UserSkill, Blog, BlogTag, BlogVote, BlogComment, 
     Question, QuestionTag, QuestionVote, SkillSharingRequest, RequestTag,
-    Schedule, Rating, Report, TimeTransaction
+    Schedule, Rating, Report, TimeTransaction, TimePlan, TimeOrder
 )
 from user_side.serializers import (
     MyTokenObtainPairSerializer,TagSerializer,BlogSerializer,UserSerializer,
     RatingSerializer,ReportSerializer,BlogTagSerializer,BlogVoteSerializer,
     FollowerSerializer,QuestionSerializer,ScheduleSerializer,UserSkillSerializer,
     RequestTagSerializer,BlogCommentSerializer,QuestionTagSerializer,QuestionVoteSerializer,
-    SkillSharingRequest,TimeTransactionSerializer,SkillSharingRequestSerializer
+    SkillSharingRequest,TimeTransactionSerializer,SkillSharingRequestSerializer,TimePlanSerializer,TimeOrderSerializer
     )
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q
@@ -23,6 +23,11 @@ from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
+from rest_framework import viewsets, status
+from rest_framework.response import Response
+from rest_framework.permissions import IsAdminUser
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 
 User = get_user_model()
 
@@ -173,3 +178,66 @@ def add_tag(request):
         serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET'])
+@permission_classes([IsSuperUser])        
+def transaction_history(request):
+    # Filter for successful time orders
+    transactions = TimeOrder.objects.filter(status=TimeOrder.OrderStatus.SUCCESSFUL)
+    
+    # Apply pagination
+    paginator = ReportPagination()
+    paginated_transactions = paginator.paginate_queryset(transactions.order_by('-created_at'), request)
+    
+    serializer = TimeOrderSerializer(paginated_transactions, many=True)
+    
+    # Calculate total time from successful orders
+    total_time = sum(
+        transaction.plan.minutes 
+        for transaction in transactions 
+        if transaction.status == TimeOrder.OrderStatus.SUCCESSFUL
+    )
+    
+    total_amount = sum(
+        transaction.amount 
+        for transaction in transactions 
+        if transaction.status == TimeOrder.OrderStatus.SUCCESSFUL
+    )
+    
+    response_data = {
+        'transactions': serializer.data,
+        'time_balance': {
+            'total_time': total_time,
+            'total_amount': total_amount,
+            'held_time': request.user.held_time
+        }
+    }
+    
+    return paginator.get_paginated_response(response_data)
+@method_decorator(csrf_exempt, name='update')  #here the model view set is user for understanding its working.
+class TimePlanViewSet(viewsets.ModelViewSet):
+    def initial(self, request, *args, **kwargs):
+        print("Request received:", request.method)
+        super().initial(request, *args, **kwargs)
+    queryset = TimePlan.objects.all().order_by('price')
+    serializer_class = TimePlanSerializer
+    # permission_classes = [IsSuperUser]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        # print("Headers:???????????????????/", request.headers)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response(serializer.data)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return Response(status=status.HTTP_204_NO_CONTENT)

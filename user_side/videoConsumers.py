@@ -134,7 +134,7 @@ class VideoMeetConsumer(AsyncWebsocketConsumer):
                     'message': {
                         'type': 'chat',
                         'sender_id': user.id,
-                        'sender_name': user.get_full_name() or user.username,  # Use full name or username
+                        'sender_name': user.get_full_name() or user.username,  # Use full name or username (currently only username from model)
                         'text': data.get('text'),
                         'time': datetime.now().strftime('%H:%M')
                     }

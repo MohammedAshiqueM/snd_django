@@ -48,8 +48,10 @@ import hmac
 import hashlib
 import uuid
 from django.db.models import Avg
+from decouple import config
 
 User = get_user_model()
+backend_url = config('BACKEND_URL') 
 
 class UserPagination(PageNumberPagination):
     page_size = 20
@@ -170,7 +172,6 @@ def all_users(request):
         if not current_user.is_authenticated:
             return Response({"error": "Authentication required"}, status=401)
 
-        # Handle both ASGI and REST framework requests
         if hasattr(request, 'query_params'):
             # REST framework request
             search_query = request.query_params.get('search', '')
@@ -182,13 +183,11 @@ def all_users(request):
             search_query = query_params.get('search', [''])[0]
             page = int(query_params.get('page', ['1'])[0])
 
-        # Get the latest message for each conversation
         latest_messages = Message.objects.filter(
             Q(sender=OuterRef('id'), receiver=current_user) |
             Q(sender=current_user, receiver=OuterRef('id'))
         ).order_by('-timestamp')
 
-        # Base query for users
         users = User.objects.filter(
             is_superuser=False
         ).exclude(
@@ -219,7 +218,6 @@ def all_users(request):
             )
         )
 
-        # Apply search filter if provided
         if search_query:
             users = users.filter(
                 Q(username__icontains=search_query) |
@@ -227,22 +225,18 @@ def all_users(request):
                 Q(last_name__icontains=search_query)
             )
 
-        # Get users with messages first
         users_with_messages = users.filter(
             Q(sent_messages__receiver=current_user) |
             Q(received_messages__sender=current_user)
         ).distinct().order_by('-last_message_time')
 
-        # Then get users without messages
         users_without_messages = users.exclude(
             Q(sent_messages__receiver=current_user) |
             Q(received_messages__sender=current_user)
         ).order_by('username')
 
-        # Combine both querysets
         all_users = list(users_with_messages) + list(users_without_messages)
 
-        # Implement pagination
         page_size = 20
         start_idx = (page - 1) * page_size
         end_idx = start_idx + page_size
@@ -250,7 +244,6 @@ def all_users(request):
         paginated_users = all_users[start_idx:end_idx]
         has_more = len(all_users) > end_idx
 
-        # Serialize the data
         serializer = UserSerializer(paginated_users, many=True, context={'request': request})
         
         return Response({
@@ -272,7 +265,7 @@ def websocket_handshake(request, user_id,target_id):
     except PermissionDenied:
         return JsonResponse({"error": "Invalid or expired token"}, status=401)
 
-    websocket_url = f"ws://127.0.0.1:8000/ws/chat/{user_id}/{target_id}/?token={token}"
+    websocket_url = f"{backend_url}/ws/chat/{user_id}/{target_id}/?token={token}"
     return JsonResponse({"websocket_url": websocket_url})
 
 @permission_classes([IsAuthenticated])
@@ -286,7 +279,7 @@ def notification_handshake(request, user_id):
     except PermissionDenied:
         return JsonResponse({"error": "Invalid or expired token"}, status=401)
     # Dynamically generate the WebSocket URL
-    websocket_url = f"ws://127.0.0.1:8000/ws/notifications/{user_id}/?token={token}"
+    websocket_url = f"{backend_url}/ws/notifications/{user_id}/?token={token}"
     return JsonResponse({"websocket_url": websocket_url})
 
 
@@ -355,7 +348,6 @@ def join_meeting(request, schedule_id):
             status=Schedule.Status.ACCEPTED
         )
         
-        # Verify user is participant
         if request.user not in [schedule.teacher, schedule.student]:
             return Response(
                 {"error": "Not authorized for this meeting"}, 
@@ -401,7 +393,7 @@ def verify_meeting(request, schedule_id):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        websocket_url = f"ws://127.0.0.1:8000/ws/video/{schedule_id}/{user_id}/?token={token}"
+        websocket_url = f"{backend_url}/ws/video/{schedule_id}/{user_id}/?token={token}"
         
         return Response({
             "valid": True,
@@ -418,17 +410,13 @@ def verify_meeting(request, schedule_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])        
 def time_transactions(request):
-    # Fetch transactions for the current user (both sent and received)
         sent_transactions = TimeTransaction.objects.filter(from_user=request.user)
         received_transactions = TimeTransaction.objects.filter(to_user=request.user)
         
-        # Combine and order transactions by most recent
         transactions = (sent_transactions | received_transactions).order_by('-created_at')
         
-        # Serialize the transactions
         serializer = TimeTransactionSerializer(transactions, many=True)
         
-        # Prepare response with time balance information
         response_data = {
             'transactions': serializer.data,
             'time_balance': {
@@ -454,12 +442,10 @@ def create_order(request, plan_id):
     """Create a new Razorpay order"""
     plan = get_object_or_404(TimePlan, id=plan_id, is_active=True)
     
-    # Initialize Razorpay client
     client = razorpay.Client(
         auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET)
     )
     
-    # Create Razorpay order
     payment_data = {
         'amount': int(plan.price * 100),  # Amount in paise
         'currency': 'INR',
@@ -474,7 +460,6 @@ def create_order(request, plan_id):
     try:
         razorpay_order = client.order.create(data=payment_data)
         
-        # Create local order
         order = TimeOrder.objects.create(
             user=request.user,
             plan=plan,
@@ -525,21 +510,18 @@ def verify_payment(request, plan_id):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Get and update order
         order = get_object_or_404(TimeOrder, razorpay_order_id=razorpay_order_id)
         order.status = TimeOrder.OrderStatus.SUCCESSFUL
         order.razorpay_payment_id = razorpay_payment_id
         order.razorpay_signature = razorpay_signature
         order.save()
         
-        # Credit time to user's account
         user = order.user
         user.available_time += order.plan.minutes
         user.save()
         
-        # Create time transaction
         TimeTransaction.objects.create(
-            from_user=User.objects.get(is_superuser=True),  # System user
+            from_user=User.objects.get(is_superuser=True),  # admin
             to_user=user,
             amount=order.plan.minutes
         )
@@ -576,7 +558,6 @@ def create_rating(request):
     teacher_id = request.data.get('teacher_id')
     rating_value = request.data.get('rating')
     
-    # Validate input
     if not teacher_id or not rating_value:
         return Response(
             {'error': 'Both teacher_id and rating are required'},
@@ -593,17 +574,14 @@ def create_rating(request):
             status=status.HTTP_400_BAD_REQUEST
         )
     
-    # Get teacher user
     teacher = get_object_or_404(User, id=teacher_id)
     
-    # Create rating
     rating = Rating.objects.create(
         teacher=teacher,
         student=request.user,
         rating=rating_value
     )
     
-    # Update teacher's average rating
     avg_rating = Rating.objects.filter(teacher=teacher).aggregate(Avg('rating'))['rating__avg']
     teacher.rating = round(avg_rating, 1)
     teacher.save()
