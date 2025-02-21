@@ -25,8 +25,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-(rjrhdc71od1jb=%%!pmhd+w0)*wi!2pwlmkmwj3*(0-+nem)$'
-
+SECRET_KEY = config('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
@@ -37,12 +36,12 @@ CHANNEL_LAYERS = {
         # 'BACKEND': 'channels.layers.InMemoryChannelLayer'
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
+            "hosts": [("redis", 6379)],
         },
     },
 }
 # Redis settings
-REDIS_URL = 'redis://localhost:6379'  # Adjust this according Redis server (for production)
+REDIS_URL = config('REDIS_URL', 'redis://redis:6379')  # Adjust this according Redis server (for production)
 
 # CHANNEL_LAYERS['default']['CONFIG']['allowed_hosts'] = ['*']
 AUTH_USER_MODEL = 'user_side.User'
@@ -119,11 +118,11 @@ ASGI_APPLICATION = 'snd_backend.asgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-       'NAME': 'snd',
-       'USER': 'postgres',
-       'PASSWORD': '12345',
-       'HOST': 'localhost',
-       'PORT': '5432',
+        'NAME': config('POSTGRES_DB', 'snd'),
+        'USER': config('POSTGRES_USER', 'postgres'),
+        'PASSWORD': config('POSTGRES_PASSWORD', '12345'),
+        'HOST': config('POSTGRES_HOST', 'db'),
+        'PORT': config('POSTGRES_PORT', '5432'),
     }
 }
 
@@ -330,8 +329,8 @@ LOGGING = {
 }
 
 # Celery Configuration
-CELERY_BROKER_URL = 'redis://127.0.0.1:6379'  # Redis as broker
-CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379'
+CELERY_BROKER_URL = config('CELERY_BROKER_URL', 'redis://redis:6379/0')  # Redis as broker
+CELERY_RESULT_BACKEND = 'redis://redis:6379/0'
 CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
