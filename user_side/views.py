@@ -127,9 +127,10 @@ class MyTokenObtainPairView(TokenObtainPairView):
                     key='access_token',
                     value=access_token,
                     httponly=True,
-                    secure=False,
-                    samesite='Lax',
+                    secure=True,
+                    samesite='None',
                     max_age=3600,
+                    domain='.granddepart.shop', 
                 )
 
             if refresh_token:
@@ -137,9 +138,10 @@ class MyTokenObtainPairView(TokenObtainPairView):
                     key='refresh_token',
                     value=refresh_token,
                     httponly=True,
-                    secure=False,
-                    samesite='Lax',
+                    secure=True,
+                    samesite='None',
                     max_age=604800,
+                    domain='.granddepart.shop', 
                 )
 
             return http_response
@@ -173,8 +175,8 @@ class CustomTokenRefreshView(TokenRefreshView):
                 key='access_token',
                 value=new_access_token,
                 httponly=True,
-                secure=False,  # Set to True in production
-                samesite='Lax',
+                secure=True,  # Set to True in production
+                samesite='None',
                 max_age=3600,
             )
 
@@ -184,8 +186,8 @@ class CustomTokenRefreshView(TokenRefreshView):
                     key='refresh_token',
                     value=data['refresh'],
                     httponly=True,
-                    secure=False,
-                    samesite='Lax',
+                    secure=True,
+                    samesite='None',
                     max_age=604800,
                 )
 
@@ -308,8 +310,8 @@ def verify_otp(request):
                     key='access_token',
                     value=access_token,
                     httponly=True,
-                    secure=False, 
-                    samesite='Lax',
+                    secure=True, 
+                    samesite='None',
                     max_age=3600, 
                 )
             if refresh_token:
@@ -317,8 +319,8 @@ def verify_otp(request):
                     key='refresh_token',
                     value=refresh_token,
                     httponly=True,
-                    secure=False,
-                    samesite='Lax',
+                    secure=True,
+                    samesite='None',
                     max_age=604800,
                 )
 
@@ -418,8 +420,8 @@ def google_login(request):
             'access_token', 
             access_token, 
             httponly=True, 
-            secure=False,  # Set to True in production
-            samesite='Lax',
+            secure=True,  # Set to True in production
+            samesite='None',
             max_age=3600  # 1 hour
         )
         
@@ -427,8 +429,8 @@ def google_login(request):
             'refresh_token', 
             refresh_token, 
             httponly=True, 
-            secure=False,  # Set to True in production
-            samesite='Lax',
+            secure=True,  # Set to True in production
+            samesite='None',
             max_age=7 * 24 * 3600  # 7 days
         )
         

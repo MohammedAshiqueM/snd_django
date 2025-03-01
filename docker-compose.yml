@@ -4,11 +4,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     environment:
-      - POSTGRES_DB=snd
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=12345
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -28,23 +28,33 @@ services:
       - app-network
 
   web:
-    build: .
-    command: uvicorn snd_backend.asgi:application --host 0.0.0.0 --port 8000 --reload
+    image: mohammedashique/snd_backend-web:latest
+    command: uvicorn snd_backend.asgi:application --host 0.0.0.0 --port 8000 --workers 4
     volumes:
-      - .:/app
       - static_volume:/app/staticfiles
-    ports:
-      - "8000:8000"
+    expose:
+      - 8000
     environment:
       - DJANGO_SETTINGS_MODULE=snd_backend.settings
-      - POSTGRES_DB=snd
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=12345
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
-      - DATABASE_URL=postgresql://postgres:12345@db:5432/snd
       - REDIS_URL=redis://redis:6379
       - CELERY_BROKER_URL=redis://redis:6379/0
+      - DEBUG=0
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+      - SECRET_KEY=${SECRET_KEY}
+      - EMAIL_HOST_USER=${EMAIL_HOST_USER}
+      - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - RAZORPAY_KEY=${RAZORPAY_KEY}
+      - RAZORPAY_SECRET=${RAZORPAY_SECRET}
+      - CLOUD_NAME=${CLOUD_NAME}
+      - CLOUD_API=${CLOUD_API}
+      - CLOUD_SECRET=${CLOUD_SECRET}
     depends_on:
       db:
         condition: service_healthy
@@ -54,18 +64,15 @@ services:
       - app-network
 
   celery:
-    build: .
+    image: mohammedashique/snd_backend-celery:latest
     command: celery -A snd_backend worker -l INFO
-    volumes:
-      - .:/app
     environment:
       - DJANGO_SETTINGS_MODULE=snd_backend.settings
-      - POSTGRES_DB=snd
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=12345
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
-      - DATABASE_URL=postgresql://postgres:12345@db:5432/snd
       - REDIS_URL=redis://redis:6379
       - CELERY_BROKER_URL=redis://redis:6379/0
     depends_on:
@@ -75,6 +82,20 @@ services:
         condition: service_healthy
       web:
         condition: service_started
+    networks:
+      - app-network
+
+  nginx:
+    image: nginx:latest
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - static_volume:/app/staticfiles
+    depends_on:
+      - web
     networks:
       - app-network
 

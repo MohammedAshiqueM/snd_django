@@ -27,9 +27,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = config('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    "127.0.0.1",
+    "43.204.237.156",
+    "*"
+]
 
 CHANNEL_LAYERS = {
     "default": {
@@ -179,21 +183,37 @@ AUTHENTICATION_BACKENDS = [
     'social_core.backends.google.GoogleOAuth2',
 ]
 
+CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
+
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')  # Trust Nginx headers
+
+CORS_ALLOW_HEADERS = [
+    '*' 
+]
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "https://43.204.237.156",
+    "https://api.granddepart.shop",
+    "https://granddepart.shop",
+    
 
 ]
 
+CORS_EXPOSE_HEADERS = [
+    "Content-Type",
+    "X-CSRFToken",
+]
+
 CORS_ALLOW_METHODS = [
-    'DELETE',
-    'GET',
-    'OPTIONS',
-    'PATCH',
-    'POST',
-    'PUT',
+    "DELETE",
+    "GET",
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
 ]
 CORS_ALLOW_HEADERS = [
     'accept',
@@ -208,9 +228,9 @@ CORS_ALLOW_HEADERS = [
 ]
 
 CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:5173", 
-    "http://127.0.0.1:5173",
-    
+    "https://api.granddepart.shop",
+    "https://granddepart.shop",
+    "http://127.0.0.1:5173"
 ]
 
 
@@ -277,6 +297,11 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_COOKIE': 'access_token',  # Optional, also store the access token
     'AUTH_COOKIE_REFRESH': 'refresh_token',
+    'AUTH_COOKIE_SECURE': True,
+    'AUTH_COOKIE_HTTP_ONLY': True,
+    'AUTH_COOKIE_SAMESITE': 'None',
+    'AUTH_COOKIE_DOMAIN': '.granddepart.shop',
+    'AUTH_COOKIE_PATH': '/',
 }
 
 REST_FRAMEWORK = {
@@ -292,16 +317,20 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 16,
 }
 
-SESSION_COOKIE_SAMESITE = 'Lax'  # Ensure this is set to 'None' for cross-origin cookies
-SESSION_COOKIE_SECURE = False  # Set to True in production (use HTTPS)
-
-SESSION_COOKIE_SAMESITE = 'lax'  # change this to none on production (now both are in http://127.0.0.1:)
+SESSION_COOKIE_SAMESITE = 'None'  # Ensure this is set to 'None' for cross-origin cookies
 SESSION_COOKIE_HTTPONLY = True
-CSRF_COOKIE_SAMESITE = 'Lax'  # or 'lax' 
+SESSION_COOKIE_DOMAIN = '.granddepart.shop'  # localhost not working (now both are in http://127.0.0.1: that's why it is working)
+SESSION_COOKIE_PATH = '/'
+SESSION_COOKIE_SECURE = True  # Keep True since backend is HTTPS
+# SESSION_COOKIE_SECURE = False  # Set to True in production (use HTTPS)
+
+# SESSION_COOKIE_SAMESITE = 'lax'  # change this to none on production (now both are in http://127.0.0.1:)
+CSRF_COOKIE_SAMESITE = 'None'  # or 'lax' 
 CSRF_COOKIE_HTTPONLY = True 
-CSRF_COOKIE_SECURE = False
-CSRF_COOKIE_HTTP_ONLY = True
-SESSION_COOKIE_DOMAIN = None  # localhost not working (now both are in http://127.0.0.1: that's why it is working)
+CSRF_COOKIE_DOMAIN = '.granddepart.shop'
+CSRF_COOKIE_SECURE = True    # Keep True since backend is HTTPS
+CSRF_COOKIE_PATH = '/'
+# CSRF_COOKIE_SECURE = False
 
 
 # settings.py

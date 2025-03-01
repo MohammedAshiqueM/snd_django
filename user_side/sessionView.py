@@ -519,6 +519,11 @@ def transfer_time(request):
             schedule.status = Schedule.Status.COMPLETED
             schedule.save()
             
+            # Update the request status to completed
+            skill_request = schedule.request
+            skill_request.status = SkillSharingRequest.Status.COMPLETED
+            skill_request.save()
+            
             return Response({
                 'status': 'success',
                 'message': f'Transferred {transfer_minutes} minutes from student to teacher.',

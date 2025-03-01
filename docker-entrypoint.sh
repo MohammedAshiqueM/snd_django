@@ -1,4 +1,4 @@
-
+#!/bin/bash
 set -e
 
 # Function to wait for postgres
