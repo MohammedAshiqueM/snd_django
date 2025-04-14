@@ -220,6 +220,10 @@ Tested and reviewed by industrial experts and Brocamp peers.
 
 ---
 
+## 📑 License
+
+This project is licensed under the [MIT License](LICENSE).
+
 ## 📧 Contact
 
 For queries, feedback, or collaboration:  
