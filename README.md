@@ -215,6 +215,7 @@ Implementing graph-based link prediction algorithms for developer connections, i
 ## 🙌 Credits & Thanks
 
 Built with ❤️ by Mohammed Ashique
+
 Tested and reviewed by industry mentors and Brocamp peers.
 
 ---
