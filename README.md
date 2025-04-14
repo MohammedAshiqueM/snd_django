@@ -197,6 +197,44 @@ docker-compose exec backend celery -A snd_backend worker --loglevel=info
 
 ---
 
+# 🛡️ Creating a Django Superuser (Without Docker)
+If you're running the project locally (without Docker) and need to create a Django superuser to access the admin panel:
+
+📌 Steps:
+Activate your virtual environment (if using one)
+```
+source venv/bin/activate    # Mac/Linux
+.\venv\Scripts\activate     # Windows
+```
+
+Run Django’s createsuperuser command
+
+```
+python manage.py createsuperuser
+```
+
+Follow the prompts:
+
+Enter a Username
+
+Enter an Email address
+
+Enter a Password
+
+✅ Once created, you can log into the Django admin panel at:
+
+- http://127.0.0.1:8000/admin/ (default Django admin)
+
+- http://127.0.0.1:3000/dashboard/ (custom admin if you're using the [snd_react frontend](https://github.com/MohammedAshiqueM/snd_react))
+
+📌 For Docker Users:
+If you're using Docker Compose, you need to run the command inside the running backend container:
+
+```
+docker-compose exec backend python manage.py createsuperuser
+```
+Then follow the same prompts in your terminal.
+
 ## 📎 Related Repositories
 
 - 🎨 **Frontend (React)**: [snd_react](https://github.com/MohammedAshiqueM/snd_react)
